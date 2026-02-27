@@ -6,7 +6,9 @@
     "src/preload/index.ts",
     "src/renderer/main.tsx",
     "electron.vite.config.ts",
-    "vite.standalone.config.ts"
+    "vite.standalone.config.ts",
+    "src/tui/index.tsx",
+    "vite.tui.config.ts"
   ],
   "project": ["src/**/*.{ts,tsx}!"],
   "ignore": ["tsconfig*.json"],
@@ -14,7 +16,8 @@
     "@main/*": ["./src/main/*"],
     "@renderer/*": ["./src/renderer/*"],
     "@preload/*": ["./src/preload/*"],
-    "@shared/*": ["./src/shared/*"]
+    "@shared/*": ["./src/shared/*"],
+    "@tui/*": ["./src/tui/*"]
   },
   "ignoreBinaries": ["pkg"]
 }

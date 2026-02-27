@@ -54,7 +54,7 @@ graph TD
 
 主進程是 Node.js 執行環境，擁有最高權限，負責所有作業系統層級的操作、檔案讀寫、伺服器啟動與資料處理。
 
-#### 核心 Module 與職責
+#### Main 核心 Module 與職責
 
 1. **`services/infrastructure/` (基礎設施)**
     * **`FileWatcher.ts`**: 監聽 `~/.claude/projects/` 與 `~/.claude/todos/` 目錄。當有 `.jsonl` 或 `.json` 異動時，會執行增量解析並派發 `file-change` 事件。同時若啟用 SSH 模式，會轉換為 Polling (輪詢) 機制而非 `fs.watch`。
@@ -63,13 +63,40 @@ graph TD
     * **`NotificationManager.ts`**: 集中管理通知邏輯，例如偵測到 Claude Code 存取 `.env` 檔案或消耗超過指定的 Token 時發出系統通知。
 
 2. **`services/parsing/` (解析器)**
-    * **`SessionParser.ts`**: 核心解析引擎。負責讀取並解析 `~/.claude/projects/projectId/sessionId.jsonl`，將每一行的 JSON 轉換為 `ParsedMessage`。同時負責區分 Tool Calls（如 Read, Bash, Edit）、子代理 (Subagent) 任務，並計算整個對話的 Token Metrics。
+    * **職責**: 負責深入讀取特定歷史對話檔，將其從原始的 JSONL 格式轉換成具備強型別結構的內部領域物件 (Domain Objects)。
+    * **輸入的檔案**:
+        * 主對話檔：`~/.claude/projects/<id>/<sessionId>.jsonl`
+        * 子代理檔：`~/.claude/projects/<id>/<sessionId>/subagents/agent-<hash>.jsonl`
+    * **處理產生的實體/事件 (Outputs)**:
+        * `ParsedMessage`: 強型別的對話建構區塊，包含了完整的對話內容、圖文陣列結構。
+        * `ToolCall` / `ToolResult`: 從原始訊息的 `<tool_use>` 以及底層結構中抽取出來，如 `Bash`、`Read`、甚至建立 Subagent 的 `Task`。
+        * `SessionMetrics`: 統計所有的 Token 使用量（Input, Output, Cache Read, Cache Creation）、以及對話執行時長與花費。
+        * **噪音過濾**: 解析過程會自動辨識出 `hardNoise` (如沒用的 metadata tag)、`isSidechain` 訊息，確保後端傳給前方的資料是乾淨可用的內容。
 
 3. **`services/discovery/` (探索器)**
-    * **`ProjectScanner.ts`**: 負責掃描 `~/.claude/projects/` 底下的所有目錄，解析專案路徑、找出最近活躍的對話 Session，並提供列表。
+    * **職責**: 負責高效率掃描本機或遠端目錄，偵測所有可用專案與最近的對話狀態，提供快速的導航結構，不會深度讀取每個檔案的完整內容。
+    * **處理的檔案目錄**:
+        * 專案目錄清單：掃描 `~/.claude/projects/` 這個根目錄。
+        * 檔案屬性 (stat)：讀取各專屬目錄下 `.jsonl` 檔案的最新修改時間 (mtime) 與大小，但不執行逐行完整解析。
+        * 任務清單檔案：讀取 `~/.claude/todos/<sessionId>.json`。
+    * **處理產生的實體/事件 (Outputs)**:
+        * `Project`：解碼 Base64 編碼的資料夾名稱，還原為實際的本機路徑與專案名稱。
+        * `RepositoryGroup` & `Worktree`：透過 `WorktreeGrouper` 分析不同的專案目錄，將屬於同一個 Git Repository 的不同 Worktree 合併歸類在一起。
+        * `Session` (Light Metadata)：從檔案屬性產生初步的 Session 摘要（僅包含 ID, 產生時間, Message Count, 第一句話等預覽用數據），傳遞給 Sidebar 用作分頁 (Paginated) 列表顯示。
 
 4. **`services/analysis/` (分析器)**
-    * **`ChunkBuilder.ts`**: 專門將原始的 `ParsedMessage` 進行視覺化區塊打包 (Chunking)。將複雜的 Prompt、Response 與 Tool Results 封裝成適合前端 UI 渲染的抽象層。
+    * **職責**: 作為 UI 的轉換器層 (Presenter Layer)。它不直接讀取硬碟上的實體檔案，而是接收由 Parsing 模組解析出來的記憶體資料，並將其處理成能夠直接綁定在 React 元件上的高階視覺化結構。
+    * **輸入資料**:
+        * 經由 `SessionParser` 解析出來的 `ParsedMessage[]` 與衍生工具數據。
+    * **處理產生的實體/事件 (Outputs)**:
+        * `Chunk`：將散落的訊息封裝成有意義的獨立區塊，例如：
+            * `UserChunk`: 真實使用者的發話。
+            * `SystemChunk`: 由終端機所吐出的系統提示或單純的 stdout 回應。
+            * `AIChunk`: 助理的回覆、其中包夾的所有內部思考與 Tool 呼叫都會被收攏在同一個 Chunk 中。
+            * `CompactChunk`: 上下文被壓縮的紀錄點。
+        * `SemanticStep` (語意步驟)：對於長篇的 AI 訊息，`SemanticStepExtractor` 會進一步拆解出更精細的顆粒度，如 `thinking` (思考階段), `tool_call` (工具呼叫階段), `subagent` (切換為子代理處理), `output` (純文字輸出)，供前端 UI 實作可展開的階層式清單。
+        * `ConversationGroup`：將對話群組化，把 User Message 到下一個 User Message 中間的 AI 反應視為一個完整群組。
+        * `WaterfallItem`：產生讓 Token Bar 與甘特圖 (Gantt Chart/Waterfall) 能夠直接渲染的時序標記資料。
 
 ### 2.2 預載進程 (Preload Process) - `src/preload/`
 
@@ -81,7 +108,7 @@ graph TD
 
 完全基於 HTML/CSS/JS 的前端畫面，使用 React 18, TailwindCSS 與 Zustand 打造的高效能介面。
 
-#### 核心 Module 與職責
+#### Renderer 核心 Module 與職責
 
 * **`api/`**: 封裝 `window.electronAPI`，若在無 Electron 的網頁模式下運行（Standalone），會自動切換為 `fetch` 呼叫 HTTP Server。
 * **`store/`**: 控制全域狀態。包含當前所選的 Project、Session、通知列表、以及處理 IPC 廣播進來的狀態更新。
@@ -89,7 +116,33 @@ graph TD
 
 ### 2.4 共用模組 (Shared) - `src/shared/`
 
-* **`types/`**: 定義了貫穿前後端的 interface，如 `FileChangeEvent`, `ParsedMessage`, `ToolCall` 等。
+由於此專案採用 Electron 的多進程架構，`shared` 目錄扮演了極其重要的角色，確保 Main、Preload 與 Renderer 進程之間的資料結構與共用邏輯保持一致。
+
+#### Shared 核心 Module 與職責
+
+1. **`types/` (型別定義)**
+    * **職責**: 定義貫穿前後端的重要 TypeScript Interface 與 Type。
+    * **主要檔案**:
+        * `api.ts`: 定義前後端 IPC (Inter-Process Communication) 通訊的 API 介面、請求參數 (Payload) 與回應格式，確保跨進程呼叫時具備型別安全。包含了 `ParsedMessage`, `ToolCall`, `FileChangeEvent` 等核心對話資料結構。
+        * `notifications.ts`: 定義系統警示與通知的結構 (例如觸發條件 `Trigger`、通知等級等)。
+        * `visualization.ts`: 定義圖表渲染 (例如 Token Stacked Bar) 所需的資料格式。
+
+2. **`utils/` (共用工具函數)**
+    * **職責**: 提供跨進程皆可使用的純函數 (Pure Functions)，避免邏輯重複實作。純函數確保在沒有 Node.js 或 Browser 特定 API 的環境下皆可安全執行。
+    * **主要檔案**:
+        * `tokenFormatting.ts` & `costFormatting.ts`: 負責將 Token 數量轉換為人類易讀的格式 (例如 1.2K, 3M) 以及計算對應的花費成本。
+        * `modelParser.ts` & `pricing.ts`: 解析 Claude 模型的定價策略與模型名稱。
+        * `contentSanitizer.ts`: 處理文字輸出的清理與格式化，過濾掉不必要的控制字元。
+        * `markdownTextSearch.ts`: 提供前端跨 Session 搜尋或高亮 Regex 關鍵字時的共同搜尋邏輯。
+        * `teammateMessageParser.ts`: 解析團隊與子代理交談時的特殊格式訊息。
+        * `logger.ts`: 封裝前後端通用的日誌印出機制 (Logger)。
+
+3. **`constants/` (環境與全局常數)**
+    * **職責**: 定義整個應用程式不變的靜態常數，避免 Magic Number 與字串散落各處。
+    * **主要檔案**:
+        * `window.ts` & `trafficLights.ts`: 定義 Electron 視窗的預設寬高，以及 macOS 紅綠燈按鈕在不同縮放比例下的位置座標。
+        * `triggerColors.ts`: 定義 UI 通知或各類警報在畫面上顯示的預設色碼。
+        * `cache.ts`: 定義各項資料快取 (Cache) 的過期時間 或 Key 的命名空間。
 
 ---
 
@@ -178,9 +231,157 @@ flowchart TD
 
 ---
 
-## 6. 核心功能與使用方式 (Features & Usage)
+## 6. GUI 架構與版面配置 (GUI Architecture & Layout)
 
-### 6.1 核心特色功能
+根據目前的程式碼（主要從 `src/renderer/components/layout/TabbedLayout.tsx` 開始追蹤），應用程式的 GUI 版面配置如下：
+
+### 6.1 視覺化佈局 (ASCII Art)
+
+這是在螢幕上大致呈現的相對位置與版面劃分：
+
+```text
++-------------------------------------------------------------------------+
+| [O] CustomTitleBar (拖曳區與應用程式圖示)                      [-][口][X] |
++-------------------------------------------------------------------------+
+| UpdateBanner (有更新時顯示)                                              |
++-----------------------------+---+---------------------------------------+
+| Sidebar (側邊欄)            |   | PaneContainer (多窗格內容區, Flex-1)   |
+| 預設寬度 280px              | 拖|                                       |
+|                             | 曳| +-----------------------------------+ |
+| [專案下拉選單 ▽ ]           | 控| | TabBar: [對話 1 x] [設定 x] [+]   | |
+| [工作樹下拉選單 ▽]          | 制| +-----------------------------------+ |
+|                             | 區| |                                   | |
+| Today                       | 域| | PaneContent:                      | |
+| ├─ Session 1                |   | | 實際顯示的視圖，例如：              | |
+| └─ Session 2                |   | | - ChatView (聊天對話)              | |
+|                             |   | | - SettingsView (設定畫面)          | |
+| Yesterday                   |   | | - SystemPromptView                | |
+| └─ Session 3                |   | |                                   | |
+|                             |   | | (支援拖放分頁至邊緣以分割視窗)       | |
+|                             |   | +-----------------------------------+ |
++-----------------------------+---+---------------------------------------+
+| WorkspaceIndicator (工作區狀態提示)                                     |
++-------------------------------------------------------------------------+
+
+* 另外有全域的覆蓋層 (Overlay)：
+
+**1. CommandPalette (命令面板 - Cmd+K / Ctrl+K)**
+```text
++-------------------------------------------------------------------------+
+|                                                                         |
+|      +-----------------------------------------------------------+      |
+|      | 🔍 搜尋專案、指令或歷史對話...                              |      |
+|      +-----------------------------------------------------------+      |
+|      | 💡 建議指令                                                 |      |
+|      |   > 切換設定檔 (Settings)                                   |      |
+|      |   > 開啟新對話                                              |      |
+|      | 🕒 近期 Session                                             |      |
+|      |   > 修復登入畫面的 Bug                                      |      |
+|      |   > 開發 Command Palette 功能                               |      |
+|      +-----------------------------------------------------------+      |
+|                                                                         |
++-------------------------------------------------------------------------+
+(位於螢幕中央偏上的半透明搜尋面板，提供快捷導航)
+```
+
+**2. ConfirmDialog / UpdateDialog (確認對話框與更新提示)**
+
+```text
++-------------------------------------------------------------------------+
+|                                                                         |
+|                  +-----------------------------------+                  |
+|                  | 標題 (例如：確定要刪除？/有新版本) |                  |
+|                  |-----------------------------------|                  |
+|                  | 這裡將顯示對話或任務的重要說明文字|                  |
+|                  | 或者應用程式發佈的更新日誌紀錄。  |                  |
+|                  |                                   |                  |
+|                  |              [ 取消 ]  [ 確定執行]|                  |
+|                  +-----------------------------------+                  |
+|                                                                         |
++-------------------------------------------------------------------------+
+(半透明全螢幕黑色遮罩，居中顯示的模態對話框 Modal)
+```
+
+**3. ContextSwitchOverlay (上下文切換與載入遮罩)**
+
+```text
++-------------------------------------------------------------------------+
+|                                                                         |
+|             ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                  |
+|             ░░                                      ░░                  |
+|             ░░       ↻ 正在切換 / 連線至遠端 SSH... ░░                  |
+|             ░░                                      ░░                  |
+|             ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                  |
+|                                                                         |
++-------------------------------------------------------------------------+
+(完全阻擋背後操作的載入遮罩，用於避免環境切換時背景資料不一致)
+```
+
+### 6.2 組件樹狀結構 (Mermaid 架構圖)
+
+以下是以 Mermaid 繪製的 React 組件關係圖：
+
+```mermaid
+graph TD
+    App --> ContextSwitchOverlay
+    App --> ConfirmDialog
+    App --> TabbedLayout
+    
+    TabbedLayout --> CustomTitleBar["CustomTitleBar<br/>(隱藏原生框架時顯示視窗控制)"]
+    TabbedLayout --> UpdateBanner
+    TabbedLayout --> CommandPalette["CommandPalette<br/>(Cmd+K 命令面板)"]
+    
+    subgraph 主畫面佈局 [Main Layout: Flex Row]
+        Sidebar["Sidebar<br/>(側邊欄, 可調整寬度 200~500px)"]
+        PaneContainer["PaneContainer<br/>(多窗格容器, 支援拖放 DndContext)"]
+    end
+    
+    TabbedLayout --> 主畫面佈局
+    
+    subgraph 側邊欄細節
+        Sidebar --> SidebarHeader["SidebarHeader<br/>(專案/工作樹下拉選單)"]
+        Sidebar --> DateGroupedSessions["DateGroupedSessions<br/>(依日期分組的對話記錄)"]
+    end
+    
+    subgraph 多窗格細節
+        PaneContainer --> PaneView1["PaneView 1"]
+        PaneContainer --> PaneResizeHandle[拖曳調整大小]
+        PaneContainer --> PaneView2[PaneView 2...]
+        
+        PaneView1 --> TabBar["TabBar (分頁列)"]
+        PaneView1 --> PaneContent["PaneContent (視圖內容)"]
+        PaneView1 --> PaneSplitDropZone[拖放分割區域 Left/Right]
+    end
+    
+    TabbedLayout --> UpdateDialog
+    TabbedLayout --> WorkspaceIndicator
+```
+
+### 6.3 主要區塊說明
+
+1. **TabLayout (主要框架)**:
+   應用程式的根版塊。設定為 `h-screen` 和 `flex-col`，負責垂直排列標題列、主畫面與狀態列。
+
+2. **Sidebar (側邊欄)**:
+   * 包含專案選擇下拉選單 (`SidebarHeader`)。
+   * 顯示依照時間排序的對話列表 (`DateGroupedSessions`)。
+   * 右側有拖曳調整大小的把手，寬度範圍限制在 200px ~ 500px 之間，預設為 280px。
+
+3. **PaneContainer (多窗格內容區)**:
+   * 一個水平排列的彈性容器 (`flex-row`)。
+   * 內部可以包含多個 `PaneView` (最多 `MAX_PANES` 個)，pane 之間有 `PaneResizeHandle` 可以調整比例。
+   * 實作了 `@dnd-kit/core` 的拖放環境 (`DndContext`)，允許分頁在不同窗格之間拖曳移動，或拖曳到邊緣建立新窗格。
+
+4. **PaneView (單一窗格)**:
+   * 每個窗格有自己的 `TabBar` 用於切換不同的視圖。
+   * `PaneContent` 是實際渲染畫面（聊天、報表或設定等）。
+   * 當處於拖曳狀態時，側邊會顯示 `PaneSplitDropZone` 供使用者放置分頁。
+
+---
+
+## 7. 核心功能與使用方式 (Features & Usage)
+
+### 7.1 核心特色功能
 
 Claude Devtools 主要設計目的是為了彌補 Claude Code 終端機介面中隱藏的細節，提供以下核心功能：
 
@@ -214,7 +415,7 @@ Claude Devtools 主要設計目的是為了彌補 Claude Code 終端機介面中
 
 ---
 
-### 6.2 安裝與使用方式
+### 7.2 安裝與使用方式
 
 Claude Devtools 不需要繁瑣的配置，也不需要綁定任何 API Key，因為它直接讀取存在您本機（或 SSH 遠端）的 `.claude` 歷史記錄檔。
 

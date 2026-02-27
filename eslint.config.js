@@ -97,6 +97,28 @@ export default defineConfig([
     },
   },
 
+  // Import plugin configuration - TUI (uses tsconfig.json)
+  {
+    name: 'import-plugin-tui',
+    files: ['src/tui/**/*.{ts,tsx}'],
+    plugins: {
+      import: importPlugin,
+    },
+    settings: {
+      'import/resolver': {
+        typescript: {
+          alwaysTryTypes: true,
+          project: './tsconfig.json',
+        },
+      },
+    },
+    rules: {
+      'import/no-cycle': ['error', { maxDepth: 3, ignoreExternal: true }],
+      'import/no-unresolved': 'error',
+      'import/no-default-export': 'warn',
+    },
+  },
+
   // Module boundaries - Enforce Electron three-process architecture
   {
     name: 'module-boundaries',
@@ -110,6 +132,7 @@ export default defineConfig([
         { type: 'preload', pattern: 'src/preload/**', mode: 'folder' },
         { type: 'renderer', pattern: 'src/renderer/**', mode: 'folder' },
         { type: 'shared', pattern: 'src/shared/**', mode: 'folder' },
+        { type: 'tui', pattern: 'src/tui/**', mode: 'folder' },
       ],
       'boundaries/ignore': ['**/*.test.ts', '**/*.spec.ts'],
     },
@@ -128,6 +151,8 @@ export default defineConfig([
             { from: 'preload', allow: ['preload', 'shared'] },
             // Shared can import from shared and main (for type re-exports)
             { from: 'shared', allow: ['shared', 'main'] },
+            // TUI can import from tui, main, shared, and renderer (pure utils only)
+            { from: 'tui', allow: ['tui', 'main', 'shared', 'renderer'] },
           ],
         },
       ],
@@ -206,6 +231,32 @@ export default defineConfig([
     },
     rules: {
       // Allow console in main process for logging
+      'no-console': 'off',
+    },
+  },
+
+  // TUI process (Node.js + Ink)
+  {
+    name: 'tui',
+    files: ['src/tui/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    plugins: {
+      react: reactPlugin,
+      'react-hooks': reactHooks,
+    },
+    settings: {
+      react: {
+        version: 'detect',
+      },
+    },
+    rules: {
+      ...reactPlugin.configs.recommended.rules,
+      ...reactPlugin.configs['jsx-runtime'].rules,
+      ...reactHooks.configs.recommended.rules,
       'no-console': 'off',
     },
   },
