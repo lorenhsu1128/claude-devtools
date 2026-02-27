@@ -1,398 +1,274 @@
-# TUI 實作規格計劃
+# TUI 實作完整參考
 
-## Context
+## 概述
 
-claude-devtools 目前只有 Electron 桌面版和 Standalone HTTP 伺服器兩種運行模式。為了讓開發者在終端機中也能快速查看 Claude Code 的 session 執行細節，需要新增 TUI (Terminal User Interface) 作為第三個進入點。TUI 使用 Ink v5 (React for terminal) 框架，直接調用 `@main/services/` 核心邏輯，不經過 Electron IPC 或 HTTP。
-
-**架構決策：** TUI 的 ESLint boundary 設為 `{ from: 'tui', allow: ['tui', 'main', 'shared', 'renderer'] }`，允許直接匯入 `@renderer/utils/` 中的純邏輯（如 `groupTransformer.ts`、`aiGroupEnhancer.ts`），免去大量檔案搬遷。
+TUI（Terminal User Interface）已完整實作，作為 claude-devtools 的第三種執行模式。使用 Ink v5（React for CLI）框架，在終端機中提供互動式的 Claude Code session 瀏覽功能。
 
 ---
 
-## Phase 1: 基礎建設 — 設定檔、依賴、空殼入口
-
-### 1.1 安裝新依賴
+## 執行方式
 
 ```bash
-pnpm add ink@^5 ink-select-input ink-text-input ink-spinner
+pnpm tui           # 建置並執行
+pnpm tui:build     # 僅建置（輸出至 dist-tui/）
+pnpm tui:start     # 執行已建置的版本
 ```
 
-### 1.2 設定檔變更
-
-**`tsconfig.json`** — 新增路徑別名：
-```json
-"@tui/*": ["./src/tui/*"]
-```
-
-**`eslint.config.js`** — 新增 TUI 邊界（約 L100-137）：
-```javascript
-// boundaries/elements 陣列新增：
-{ type: 'tui', pattern: 'src/tui/**', mode: 'folder' }
-
-// boundaries/element-types rules 陣列新增：
-{ from: 'tui', allow: ['tui', 'main', 'shared', 'renderer'] }
-```
-另需新增 `src/tui/**/*.{ts,tsx}` 的 language options 區塊（設定 `globals.node`），以及 import-plugin 設定（參照現有 `import-plugin-main` 區塊）。
-
-**`vitest.config.ts`** — 新增別名和環境覆蓋：
-```javascript
-// resolve.alias 新增：
-'@tui': resolve(__dirname, 'src/tui')
-
-// test 區塊新增：
-environmentMatchGlobs: [['test/tui/**', 'node']]
-```
-
-**`knip.json`** — 新增入口和路徑：
-```json
-"entry": [...existing, "src/tui/index.tsx", "vite.tui.config.ts"],
-"paths": { "@tui/*": ["./src/tui/*"], ...existing }
-```
-
-**`package.json`** — 新增腳本：
-```json
-"tui": "tsx src/tui/index.tsx",
-"tui:build": "vite build --config vite.tui.config.ts",
-"tui:start": "node dist-tui/index.cjs"
-```
-
-### 1.3 新檔案 `vite.tui.config.ts`
-
-仿照 `vite.standalone.config.ts`：
-- 入口：`src/tui/index.tsx`
-- 輸出：`dist-tui/`
-- 新增 `@tui` 路徑別名，保留 `@main`、`@shared`、`@renderer` 別名
-- 保留 `electronStub` 和 `nativeModuleStub` 插件
-- `build.target: 'node20'`, `build.ssr: true`
-
-### 1.4 空殼入口 `src/tui/index.tsx`
-
-先驗證 `tsx src/tui/index.tsx` 能正常執行：
-```typescript
-import React from 'react';
-import { render, Text } from 'ink';
-render(<Text color="cyan">claude-devtools TUI — Hello World</Text>);
-```
-
-### 1.5 驗證
-
+環境變數：
 ```bash
-pnpm tui          # 應印出 Hello World
-pnpm typecheck    # 無錯誤
-pnpm lint         # 邊界規則通過
+CLAUDE_ROOT=/custom/path pnpm tui   # 使用自訂 .claude 目錄
 ```
 
 ---
 
-## Phase 2: 資料層 — ServiceContext 與 Zustand Store
+## 已完成功能清單
 
-### 2.1 ServiceContext 初始化 `src/tui/utils/initServiceContext.ts`
+### Phase 1：基礎建設 ✅
+- Ink 相關依賴（`ink`, `ink-text-input`, `ink-spinner`）
+- `@tui/*` 路徑別名
+- ESLint boundary 規則
+- Vite 建置設定（`vite.tui.config.ts`）
+- 空殼入口驗證
 
-仿照 `src/main/standalone.ts`（L14-23）的初始化模式：
+### Phase 2：資料層 ✅
+- `ServiceContext` 初始化（`utils/initServiceContext.ts`）
+- Zustand Store 完整實作（`store.ts`）
+- 資料流程：JSONL → ParsedMessage → Chunk → ChatItem → EnhancedAIGroup
+- Context 追蹤整合（`processSessionContextWithPhases`）
 
-```typescript
-import { ServiceContext, LocalFileSystemProvider } from '@main/services';
-import { getProjectsBasePath, getTodosBasePath, setClaudeBasePathOverride } from '@main/utils/pathDecoder';
+### Phase 3：導航外殼 ✅
+- **單一全寬面板**（非原規劃的雙面板）
+- `BreadcrumbBar` 導覽列元件
+- `ProjectListView` 全寬專案列表
+- `SessionListView` 全寬 session 列表（含日期分組）
+- 集中鍵盤處理（`useKeymap.ts`）
+- 逐行捲動系統（`chatItemLineOffset`）
 
-export function createLocalServiceContext(): ServiceContext {
-  if (process.env.CLAUDE_ROOT) {
-    setClaudeBasePathOverride(process.env.CLAUDE_ROOT);
-  }
-  const ctx = new ServiceContext({
-    id: 'local',
-    type: 'local',
-    fsProvider: new LocalFileSystemProvider(),
-    projectsDir: getProjectsBasePath(),
-    todosDir: getTodosBasePath(),
-  });
-  ctx.start();
-  return ctx;
-}
-```
+### Phase 4：聊天渲染 ✅
+- `AIItem`（摺疊/展開，含子項目導覽）
+- `UserItem`（展開/收合，超過 15 行截斷）
+- `SystemItem`（展開後內部分頁捲動）
+- `CompactItem`（壓縮邊界）
+- `ToolItem`（工具呼叫展開詳情）
+- `ContextPanel`（Context 注入分類詳情）
+- `MarkdownText`（終端機 Markdown 渲染）
+- `TokenBar`（ASCII 進度條）
+- Syntax highlighting（10+ 語言）
 
-### 2.2 Zustand Store `src/tui/store.ts`
+### Phase 5：即時更新 ✅
+- `useFileWatcher.ts` — FileWatcher 事件訂閱，自動 refresh
 
-單一扁平 store（TUI 不需多 tab、不需 slice 分割）：
-
-```typescript
-interface TuiState {
-  // 焦點模式
-  focusMode: 'projects' | 'sessions' | 'chat';
-
-  // 專案
-  projects: Project[];
-  selectedProjectIndex: number;
-  selectedProjectId: string | null;
-  projectsLoading: boolean;
-  projectsError: string | null;
-
-  // Sessions
-  sessions: Session[];
-  selectedSessionIndex: number;
-  selectedSessionId: string | null;
-  sessionsLoading: boolean;
-
-  // 聊天內容
-  chatItems: ChatItem[];
-  chatScrollOffset: number;
-  expandedAIGroupIds: Set<string>;
-  chatLoading: boolean;
-  sessionIsOngoing: boolean;
-
-  // Actions
-  loadProjects(): Promise<void>;
-  selectProject(projectId: string): Promise<void>;
-  selectSession(sessionId: string): Promise<void>;
-  refreshCurrentSession(): Promise<void>;
-  setFocusMode(mode: TuiState['focusMode']): void;
-  scrollChat(delta: number): void;
-  toggleAIGroupExpanded(id: string): void;
-}
-```
-
-**資料流程（各 action 內部邏輯）：**
-
-1. `loadProjects()` → `serviceContext.projectScanner.scan()` → 存入 `projects`
-2. `selectProject(id)` → `serviceContext.projectScanner.listSessions(id)` → 存入 `sessions`，切換 `focusMode: 'sessions'`
-3. `selectSession(id)`:
-   - `sessionParser.parseSession(projectId, sessionId)` → `ParsedSession`
-   - `subagentResolver.resolveSubagents(projectId, sessionId, taskCalls, messages)` → `Process[]`
-   - `chunkBuilder.buildChunks(messages, subagents)` → `EnhancedChunk[]`
-   - `asEnhancedChunkArray()` 驗證（`@renderer/types/data`）
-   - `transformChunksToConversation(chunks, subagents, isOngoing)` → `SessionConversation`（`@renderer/utils/groupTransformer`）
-   - 對每個 AIGroup 呼叫 `enhanceAIGroup()`（`@renderer/utils/aiGroupEnhancer`）
-   - 存入 `chatItems`，切換 `focusMode: 'chat'`
-4. `refreshCurrentSession()` → 重新執行步驟 3，保留 `chatScrollOffset` 和 `expandedAIGroupIds`
-
-**ServiceContext 以模組層級 singleton 持有**（非 React context），在 `index.tsx` 建立後透過 `setServiceContext()` 注入 store。
-
-### 2.3 更新 `src/tui/index.tsx`
-
-```typescript
-import { render } from 'ink';
-import { createLocalServiceContext } from './utils/initServiceContext';
-import { setServiceContext } from './store';
-import { App } from './components/App';
-
-const serviceContext = createLocalServiceContext();
-setServiceContext(serviceContext);
-
-process.on('SIGINT', () => { serviceContext.dispose(); process.exit(0); });
-process.on('SIGTERM', () => { serviceContext.dispose(); process.exit(0); });
-
-render(<App />);
-```
+### 額外功能（超出原規劃）✅
+- Session 過濾搜尋（`/` 鍵啟動，即時過濾）
+- Chat 記錄搜尋（`/` 鍵啟動，高亮匹配項）
+- Subagent 鑽取導航（stack-based，完整狀態還原）
+- Context 面板（逐類別展開，6 大類）
+- 說明視窗（`?` 鍵切換）
+- `[LIVE]` 即時 session 標記
+- 子代理 drill-down 完整支援（含深層巢狀）
 
 ---
 
-## Phase 3: 導航外殼 — 雙面板佈局與鍵盤操作
-
-### 3.1 目錄結構
+## 實際目錄結構
 
 ```
 src/tui/
-├── index.tsx                    # 入口點
-├── store.ts                     # Zustand store
-├── types.ts                     # TUI 專用類型
+├── index.tsx                          # 入口點：初始化 ServiceContext、render App
+├── store.ts                           # 單一扁平 Zustand store
+├── types.ts                           # TUI 專用型別
+│
 ├── components/
-│   ├── App.tsx                  # 根佈局：header + sidebar/main + status bar
-│   ├── Sidebar.tsx              # 左側：專案列表 ↔ session 列表
-│   ├── ChatView.tsx             # 右側：捲動式聊天項目
+│   ├── App.tsx                        # 根佈局：header + breadcrumb + panel + statusbar
+│   ├── ChatView.tsx                   # 全寬聊天瀑布流（逐行捲動）
+│   ├── ProjectListView.tsx            # 全寬專案列表
+│   ├── SessionListView.tsx            # 全寬 session 列表（含過濾）
+│   │
 │   ├── chat/
-│   │   ├── UserItem.tsx         # 渲染 UserGroup
-│   │   ├── AIItem.tsx           # 渲染 AIGroup（摺疊/展開）
-│   │   ├── SystemItem.tsx       # 渲染 SystemGroup
-│   │   ├── CompactItem.tsx      # 渲染 CompactGroup
-│   │   └── ToolItem.tsx         # 渲染 LinkedToolItem
+│   │   ├── AIItem.tsx                 # AI 回應渲染（摺疊/展開/子項目導覽）
+│   │   ├── UserItem.tsx               # 使用者訊息渲染（展開/收合）
+│   │   ├── SystemItem.tsx             # 系統輸出渲染（展開後分頁）
+│   │   ├── CompactItem.tsx            # 壓縮邊界渲染
+│   │   ├── ToolItem.tsx               # 工具呼叫渲染（展開詳情）
+│   │   └── ContextPanel.tsx           # Context 注入詳情面板
+│   │
 │   └── common/
-│       ├── TokenBar.tsx         # ASCII 進度條 ████░░░░
-│       ├── StatusBar.tsx        # 底部快捷鍵提示
-│       └── LoadingSpinner.tsx   # ink-spinner 包裝
+│       ├── App.tsx                    # 根佈局（同上層 App.tsx）
+│       ├── BreadcrumbBar.tsx          # 導覽列
+│       ├── HelpOverlay.tsx            # 全螢幕說明視窗
+│       ├── LoadingSpinner.tsx         # 載入動畫
+│       ├── MarkdownText.tsx           # 終端機 Markdown 渲染
+│       ├── StatusBar.tsx              # 底部按鍵說明列
+│       └── TokenBar.tsx               # ASCII Token 進度條
+│
 ├── hooks/
-│   ├── useKeymap.ts             # 集中鍵盤分派
-│   ├── useScrollWindow.ts       # offset-based 捲動
-│   └── useFileWatcher.ts        # FileWatcher 事件訂閱
+│   ├── useFileWatcher.ts              # FileWatcher 訂閱（即時更新）
+│   ├── useKeymap.ts                   # 集中鍵盤事件分派
+│   └── useScrollWindow.ts            # 視窗捲動計算 + 項目高度估算
+│
 └── utils/
-    ├── dateGrouping.ts          # Session 日期分組
-    ├── textWrap.ts              # 終端機自動換行
-    └── initServiceContext.ts    # ServiceContext 工廠
+    ├── dateGrouping.ts                # Session 日期分組
+    ├── initServiceContext.ts          # ServiceContext 工廠
+    ├── syntaxHighlight.tsx            # 語法高亮（10+ 語言）
+    └── textWrap.ts                    # 文字截斷工具
 ```
-
-### 3.2 版面佈局
-
-```
-┌─────────────────────────────────────────────────────┐
-│ claude-devtools TUI              [project-name]     │
-├──────────────┬──────────────────────────────────────┤
-│ Projects     │ Session: fix login bug               │
-│              │                                      │
-│ > my-app   3 │ [User] 2024-01-15 14:30              │
-│   api-svc  7 │ Fix the login page validation...     │
-│   docs     2 │                                      │
-│              │ [AI] 1.2s · 15.2k tokens             │
-│              │ ▸ Read src/auth/login.ts              │
-│              │ ▸ Edit src/auth/login.ts              │
-│              │ Fixed the validation logic by...      │
-│              │                                      │
-│              │ ── Compaction: -45.2k freed ──        │
-│              │                                      │
-│              │ [User] 14:32                          │
-│              │ Now add tests                         │
-├──────────────┴──────────────────────────────────────┤
-│ ↑↓ Navigate  Enter Select  / Search  q Quit        │
-└─────────────────────────────────────────────────────┘
-```
-
-### 3.3 鍵盤操作模型
-
-使用 Ink `useInput()` hook 在 `App.tsx` 集中處理：
-
-| 模式 | 按鍵 | 動作 |
-|------|------|------|
-| `projects` | `j/k` 或 `↑/↓` | 瀏覽專案列表 |
-| `projects` | `Enter` | 選擇專案 → `sessions` |
-| `projects` | `q` | 退出 |
-| `sessions` | `j/k` 或 `↑/↓` | 瀏覽 session 列表 |
-| `sessions` | `Enter` | 選擇 session → `chat` |
-| `sessions` | `Escape` | → `projects` |
-| `chat` | `j/k` 或 `↑/↓` | 捲動 ±1 |
-| `chat` | `d/u` | 捲動 ±10（半頁） |
-| `chat` | `Enter` | 展開/摺疊 AI 群組 |
-| `chat` | `r` | 重新整理 |
-| `chat` | `Escape` | → `sessions` |
-| 所有 | `Tab` | 面板切換 |
-
-### 3.4 捲動實作 (`useScrollWindow.ts`)
-
-Ink 無 `overflow: scroll`，使用 offset-based windowing：
-- `scrollOffset` 是第一個可見項目的索引
-- 每個 ChatItem 有 `estimateRows(item, columns)` 估算行數
-- 依 `process.stdout.rows` 計算可見視窗
-- 超長內容截斷並顯示 "...N more lines"
 
 ---
 
-## Phase 4: 聊天渲染 — 各 ChatItem 元件
+## Store 狀態架構
 
-### UserItem
-```
-[User] 14:30
-Fix the login page validation bug
-```
+### ServiceContext 整合
 
-### AIItem（摺疊）
-```
-[AI] 1.2s · 15.2k tokens · Read(2) Edit(1) Bash(1)
-```
-摘要使用 `enhancedAIGroup.itemsSummary`（由 `buildSummary()` 產生）。
-
-### AIItem（展開）
-```
-[AI] 1.2s · 15.2k tokens
-  ▸ Read src/auth/login.ts (245 lines)
-  ▸ Edit src/auth/login.ts (+12 -3)
-  ▸ Bash: pnpm test (exit 0)
-  ────
-  Fixed the validation logic by adding...
-```
-遍歷 `enhancedAIGroup.displayItems`，依 `item.type` 分派渲染。
-
-### ToolItem
-```
-▸ Read src/auth/login.ts (245 lines)       # 摺疊
-▾ Read src/auth/login.ts (245 lines)       # 展開
-  Output: export function validateLogin(...
-```
-使用 `linkedTools[].callPreview` 和 `linkedTools[].resultPreview`。
-
-### CompactItem
-```
-── Compaction: -45.2k freed (120k → 75k) ──
-```
-使用 `compactGroup.tokenDelta`。
-
-### SystemItem
-```
-[System] pnpm test output: 12 tests passed
-```
-
-### TokenBar
-```
-████████░░░░░░  72.5k / 100k (72%)
-```
-使用 `formatTokensCompact()`（`@shared/utils/tokenFormatting`）。
-
----
-
-## Phase 5: 即時更新
-
-### `useFileWatcher.ts`
+ServiceContext 以**模組層級 singleton** 持有，在 `index.tsx` 建立後透過 `setServiceContext()` 注入：
 
 ```typescript
-useEffect(() => {
-  const handler = (event: FileChangeEvent) => {
-    const state = useTuiStore.getState();
-    if (state.selectedProjectId === event.projectId) {
-      if (state.selectedSessionId === event.sessionId) {
-        void state.refreshCurrentSession();
-      }
-      // 也可能有新 session 出現
+// index.tsx
+const serviceContext = createLocalServiceContext();
+setServiceContext(serviceContext);
+render(<App />);
+```
+
+```typescript
+// store.ts 內部取用
+const ctx = getServiceContext();
+const projects = await ctx.projectScanner.scan();
+```
+
+### 資料流（各 action 邏輯）
+
+**`loadProjects()`：**
+1. `ctx.projectScanner.scan()` → `Project[]`
+2. 依 `mostRecentSession` 排序
+3. 平行計算各專案的過濾後 session 數量
+4. 存入 `projects`, `projectSessionCounts`
+
+**`selectProject(id)`：**
+1. `ctx.projectScanner.listSessions(id)` → `Session[]`
+2. 依 `createdAt` 降序排列
+3. 切換 `focusMode: 'sessions'`
+
+**`selectSession(id)`：**
+1. `ctx.sessionParser.parseSession(projectId, id)` → `ParsedSession`
+2. `ctx.subagentResolver.resolveSubagents(...)` → `Process[]`
+3. `ctx.chunkBuilder.buildChunks(messages, subagents)` → `EnhancedChunk[]`
+4. `transformChunksToConversation(chunks, subagents, isOngoing)` → `ChatItem[]`
+5. 對每個 AIGroup 呼叫 `enhanceAIGroup()`
+6. `processSessionContextWithPhases()` 計算 context stats
+7. 存入 `chatItems`, 切換 `focusMode: 'chat'`
+
+**`refreshCurrentSession()`：**
+重新執行 `selectSession()` 流程，但保留 `chatScrollOffset` 和 `expandedAIGroupIds`。
+
+**`drillDownSubagent(process)`：**
+1. 將目前完整狀態壓入 `subagentStack`
+2. 設定 `subagentLabel`
+3. 載入 subagent 的 session 資料
+
+**`goBackFromSubagent()`：**
+從 `subagentStack` pop，完整還原上一層狀態。
+
+---
+
+## 捲動系統技術細節
+
+### 逐行捲動原理
+
+```typescript
+// useKeymap.ts 中的 scrollChatLine 邏輯
+function scrollChatLine(direction: 1 | -1): void {
+  const store = useTuiStore.getState();
+  const { chatScrollOffset, chatItemLineOffset, chatItems } = store;
+  const termCols = stdout?.columns ?? 80;
+  const availableRows = Math.max((stdout?.rows ?? 24) - CHAT_CHROME_ROWS, 5);
+
+  if (direction === 1) {
+    const itemHeight = getItemHeight(chatItems[chatScrollOffset], termCols, store, availableRows);
+    if (chatItemLineOffset + 1 < itemHeight) {
+      // 在同一項目內繼續往下
+      store.setState({ chatItemLineOffset: chatItemLineOffset + 1 });
+    } else if (chatScrollOffset + 1 < chatItems.length) {
+      // 移到下一個項目
+      store.scrollChat(1);
+      store.setState({ chatItemLineOffset: 0 });
     }
-  };
-  serviceContext.fileWatcher.on('file-change', handler);
-  return () => { serviceContext.fileWatcher.off('file-change', handler); };
-}, []);
+  } else {
+    if (chatItemLineOffset > 0) {
+      // 在同一項目內往上
+      store.setState({ chatItemLineOffset: chatItemLineOffset - 1 });
+    } else if (chatScrollOffset > 0) {
+      // 移到上一個項目的最後一行
+      store.scrollChat(-1);
+      const prevHeight = getItemHeight(chatItems[chatScrollOffset - 1], termCols, store, availableRows);
+      store.setState({ chatItemLineOffset: Math.max(0, prevHeight - 1) });
+    }
+  }
+}
+```
+
+### 視窗計算（useScrollWindow.ts）
+
+```typescript
+// 計算可見的 ChatItem 切片
+function useScrollWindow(chatItems, scrollOffset): ScrollWindow {
+  const availableRows = termRows - CHROME_ROWS; // CHROME_ROWS = 9
+  let rowsBudget = availableRows + chatItemLineOffset; // 加上偏移量以多渲染一項
+  let count = 0;
+
+  for (let i = scrollOffset; i < chatItems.length && rowsBudget > 0; i++) {
+    rowsBudget -= estimateItemRows(chatItems[i], ...);
+    count++;
+  }
+  return { startIndex: scrollOffset, count, availableRows };
+}
+```
+
+### 視覺渲染（ChatView.tsx）
+
+```tsx
+// overflow="hidden" + 負 marginTop 實現視覺行滾動
+<Box flexDirection="column" paddingX={1} flexGrow={1} overflow="hidden">
+  <Box flexDirection="column" marginTop={-chatItemLineOffset}>
+    {visibleItems.map(...)}
+  </Box>
+</Box>
 ```
 
 ---
 
-## 不在初期範圍內
+## 重用的現有模組
 
-- SSH 遠端 session
-- 子代理深入鑽取
-- Context injection 追蹤面板
-- 通知觸發器
-- 搜尋過濾
-- 多窗格/多 tab
-
----
-
-## 可重用的現有模組（直接匯入）
-
-| 模組 | 匯入路徑 | 用途 |
-|------|---------|------|
-| `transformChunksToConversation` | `@renderer/utils/groupTransformer` | Chunk → ChatItem 轉換 |
+| 模組 | 路徑 | 用途 |
+|------|------|------|
+| `transformChunksToConversation` | `@renderer/utils/groupTransformer` | Chunk → ChatItem |
 | `enhanceAIGroup` | `@renderer/utils/aiGroupEnhancer` | AI 群組顯示增強 |
-| `asEnhancedChunkArray` | `@renderer/types/data` | Chunk 類型驗證 |
-| `isAssistantMessage` | `@renderer/types/data` | 訊息類型判斷 |
-| `formatTokensCompact` | `@shared/utils/tokenFormatting` | Token 格式化 |
+| `processSessionContextWithPhases` | `@renderer/utils/contextTracker` | Context 追蹤 |
 | `formatDuration` | `@renderer/utils/formatters` | 時間格式化 |
-| `sanitizeDisplayContent` | `@shared/utils/contentSanitizer` | 內容清理 |
 | `parseModelString` | `@shared/utils/modelParser` | 模型名稱解析 |
+| `sanitizeDisplayContent` | `@shared/utils/contentSanitizer` | 內容清理 |
+| `ServiceContext` | `@main/services` | 核心服務容器 |
+| `ProjectScanner` | `@main/services/discovery` | 專案掃描 |
+| `SessionParser` | `@main/services/parsing` | JSONL 解析 |
+| `ChunkBuilder` | `@main/services/analysis` | Chunk 建構 |
+| `SubagentResolver` | `@main/services` | Subagent 連結 |
+| `FileWatcher` | `@main/services/infrastructure` | 檔案監聽 |
 
 ---
 
-## 關鍵檔案參考
-
-| 用途 | 路徑 |
-|------|------|
-| ServiceContext 初始化範本 | `src/main/standalone.ts` |
-| Vite 建置設定範本 | `vite.standalone.config.ts` |
-| ESLint 邊界設定 | `eslint.config.js` (L100-137) |
-| 核心轉換器 | `src/renderer/utils/groupTransformer.ts` |
-| 顯示增強器 | `src/renderer/utils/aiGroupEnhancer.ts` |
-| Shared types barrel | `src/shared/types/index.ts` |
-| 顯示類型定義 | `src/renderer/types/groups.ts` |
-| Token 格式化 | `src/shared/utils/tokenFormatting.ts` |
-| 內容清理 | `src/shared/utils/contentSanitizer.ts` |
-
----
-
-## 驗證方式
+## 驗證指令
 
 ```bash
-pnpm tui              # TUI 正常啟動，顯示專案列表
-pnpm typecheck        # 無型別錯誤
-pnpm lint             # 邊界規則通過
-pnpm test             # 所有現有測試 + 新 TUI 測試通過
-pnpm check            # 完整品質管線
+pnpm tui           # 啟動 TUI，應顯示全寬專案列表
+pnpm typecheck     # 型別檢查通過（無錯誤）
+pnpm lint          # ESLint 邊界規則通過
+pnpm test          # 所有 652 個測試通過
+pnpm check         # 完整品質管線
 ```
+
+---
+
+## 已知限制
+
+- **無 SSH 遠端 session 支援**（僅本機 `~/.claude/`）
+- **無多分頁/多窗格**（同時只能查看一個 session）
+- **無滑鼠操作**（純鍵盤導覽）
+- **Context Injection 追蹤不完整**（部分類別資料可能較少）
+- **ANSI escape code 清理**：系統指令輸出若含大量 ANSI 碼，顯示效果可能不佳

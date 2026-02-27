@@ -4,10 +4,10 @@
  * Collapsed:
  *   [AI] 1.2s · 15.2k tokens · Read(2) Edit(1) Bash(1)
  *
- * Expanded (with sub-item pagination when content exceeds viewport):
+ * Expanded (with sub-item cursor and pagination):
  *   [AI] 1.2s · 15.2k tokens                   [claude-sonnet-4-6]
  *   ↑ 3 hidden
- *   ▸ Edit login.ts - 3 -> 5 lines
+ *   ▸ Edit login.ts - 3 -> 5 lines        ← cursor (inverse cyan)
  *   ⚙ Subagent: Explore — find auth files (2.3s)
  *   ────
  *   Fixed the validation logic by adding...
@@ -33,15 +33,37 @@ import type {
 interface AIItemProps {
   group: AIGroup;
   expanded: boolean;
-  /** Number of display items to skip from the top (sub-item scroll). */
+  /** Whether this is the focused chat item. */
+  isFocused?: boolean;
+  /**
+   * Cursor position within the expanded group.
+   * 0 = header focused, 1..N = sub-item focused (1-based).
+   */
   displayOffset?: number;
   /** Maximum number of display lines to show in the viewport. */
   maxDisplayLines?: number;
 }
 
+/**
+ * Compute scroll window start to keep the cursor visible within
+ * a sub-item list, similar to list view scroll.
+ */
+function computeSubItemScrollStart(
+  cursorIndex: number,
+  totalItems: number,
+  maxVisible: number,
+): number {
+  if (totalItems <= maxVisible) return 0;
+  const margin = Math.min(2, Math.floor(maxVisible / 4));
+  let start = cursorIndex - margin;
+  start = Math.max(0, Math.min(start, totalItems - maxVisible));
+  return start;
+}
+
 export const AIItem = ({
   group,
   expanded,
+  isFocused = false,
   displayOffset = 0,
   maxDisplayLines = 20,
 }: AIItemProps): JSX.Element => {
@@ -78,9 +100,19 @@ export const AIItem = ({
   }
 
   const total = allEntries.length;
-  const visibleEntries = allEntries.slice(displayOffset, displayOffset + maxDisplayLines);
-  const hiddenAbove = displayOffset;
-  const hiddenBelow = Math.max(0, total - displayOffset - maxDisplayLines);
+
+  // displayOffset is cursor position: 0 = header, 1..N = sub-items (1-based)
+  // Compute scroll window to keep cursor visible
+  const cursorItemIndex = displayOffset > 0 ? displayOffset - 1 : -1; // 0-based index into allEntries
+  const scrollStart = cursorItemIndex >= 0
+    ? computeSubItemScrollStart(cursorItemIndex, total, maxDisplayLines)
+    : 0;
+  const visibleEntries = allEntries.slice(scrollStart, scrollStart + maxDisplayLines);
+  const hiddenAbove = scrollStart;
+  const hiddenBelow = Math.max(0, total - scrollStart - maxDisplayLines);
+
+  // Which visible entry has the cursor?
+  const focusedVisibleIndex = cursorItemIndex >= 0 ? cursorItemIndex - scrollStart : -1;
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -101,12 +133,23 @@ export const AIItem = ({
         <Text dimColor>  ↑ {hiddenAbove} hidden</Text>
       ) : null}
 
-      {/* Visible entries */}
+      {/* Visible entries with sub-item cursor */}
       {visibleEntries.map((entry, i) => {
-        if (entry.kind === 'display') {
-          return <DisplayItem key={displayOffset + i} item={entry.item} />;
-        }
-        return <LastOutputRenderer key={`output-${displayOffset + i}`} output={entry.output} />;
+        const isSubFocused = isFocused && i === focusedVisibleIndex;
+        const entryNode = entry.kind === 'display'
+          ? <DisplayItem key={scrollStart + i} item={entry.item} />
+          : <LastOutputRenderer key={`output-${scrollStart + i}`} output={entry.output} />;
+
+        return (
+          <Box key={`entry-${scrollStart + i}`} flexDirection="row">
+            <Text color={isSubFocused ? 'cyan' : undefined} inverse={isSubFocused}>
+              {isSubFocused ? '▸ ' : '  '}
+            </Text>
+            <Box flexDirection="column" flexGrow={1}>
+              {entryNode}
+            </Box>
+          </Box>
+        );
       })}
 
       {/* Hidden-below indicator */}
@@ -123,19 +166,29 @@ type ExpandedEntry =
 
 // ── Display item renderer ──
 
+/**
+ * Render a display item. Every case returns <Box flexDirection="column">
+ * so that sibling entries have a consistent element structure for Ink.
+ */
 const DisplayItem = ({ item }: { item: AIGroupDisplayItem }): JSX.Element | null => {
   const expandedToolIds = useTuiStore((s) => s.expandedToolIds);
 
   switch (item.type) {
     case 'thinking':
       return (
-        <Text dimColor>
-          {'  '}💭 Thinking ({formatTokensCompact(item.tokenCount ?? 0)})
-        </Text>
+        <Box flexDirection="column">
+          <Text dimColor>
+            💭 Thinking ({formatTokensCompact(item.tokenCount ?? 0)})
+          </Text>
+        </Box>
       );
 
     case 'tool':
-      return <ToolItem tool={item.tool} expanded={expandedToolIds.has(item.tool.id)} />;
+      return (
+        <Box flexDirection="column">
+          <ToolItem tool={item.tool} expanded={expandedToolIds.has(item.tool.id)} />
+        </Box>
+      );
 
     case 'subagent': {
       const sa = item.subagent;
@@ -145,43 +198,51 @@ const DisplayItem = ({ item }: { item: AIGroupDisplayItem }): JSX.Element | null
       const teamLabel =
         sa.team ? ` [${sa.team.memberName}]` : '';
       return (
-        <Text>
-          <Text dimColor>{'  '}⚙ </Text>
-          <Text color="magenta">{typeLabel}</Text>
-          <Text dimColor>
-            {desc} ({dur}){teamLabel} ▸
+        <Box flexDirection="column">
+          <Text>
+            <Text dimColor>⚙ </Text>
+            <Text color="magenta">{typeLabel}</Text>
+            <Text dimColor>
+              {desc} ({dur}){teamLabel} ▸
+            </Text>
           </Text>
-        </Text>
+        </Box>
       );
     }
 
     case 'slash': {
       const sl = item.slash;
       return (
-        <Text>
-          <Text dimColor>{'  '}/ </Text>
-          <Text color="cyan">{sl.name}</Text>
-          {sl.args ? <Text dimColor> {truncate(sl.args, 40)}</Text> : null}
-        </Text>
+        <Box flexDirection="column">
+          <Text>
+            <Text dimColor>/ </Text>
+            <Text color="cyan">{sl.name}</Text>
+            {sl.args ? <Text dimColor> {truncate(sl.args, 40)}</Text> : null}
+          </Text>
+        </Box>
       );
     }
 
     case 'teammate_message': {
       const tm = item.teammateMessage;
       return (
-        <Text>
-          <Text dimColor>{'  '}💬 </Text>
-          <Text color="magenta">{tm.teammateId}</Text>
-          <Text dimColor> {truncate(tm.summary, 60)}</Text>
-        </Text>
+        <Box flexDirection="column">
+          <Text>
+            <Text dimColor>💬 </Text>
+            <Text color="magenta">{tm.teammateId}</Text>
+            <Text dimColor> {truncate(tm.summary, 60)}</Text>
+          </Text>
+        </Box>
       );
     }
 
     case 'subagent_input':
       return (
-        <Text dimColor wrap="wrap">
-          {'  '}📋 {truncate(item.content, 80)}
-        </Text>
+        <Box flexDirection="column">
+          <Text dimColor wrap="wrap">
+            📋 {truncate(item.content, 80)}
+          </Text>
+        </Box>
       );
 
     case 'compact_boundary': {
@@ -189,7 +250,11 @@ const DisplayItem = ({ item }: { item: AIGroupDisplayItem }): JSX.Element | null
       const label = td
         ? `Phase ${item.phaseNumber}: ${formatTokensCompact(Math.abs(td.delta))} freed`
         : `Phase ${item.phaseNumber}`;
-      return <Text dimColor>{'  '}── {label} ──</Text>;
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>── {label} ──</Text>
+        </Box>
+      );
     }
 
     case 'output':
@@ -202,6 +267,10 @@ const DisplayItem = ({ item }: { item: AIGroupDisplayItem }): JSX.Element | null
 
 // ── Last output renderer ──
 
+/**
+ * Render last output. Every case returns <Box flexDirection="column">
+ * for consistent sibling structure.
+ */
 const LastOutputRenderer = ({
   output,
 }: {
@@ -214,8 +283,8 @@ const LastOutputRenderer = ({
       if (!output.text) return null;
       return (
         <Box flexDirection="column">
-          <Text dimColor>{'  '}────</Text>
-          <Box paddingLeft={1}>
+          <Text dimColor>────</Text>
+          <Box>
             <MarkdownText text={truncate(output.text, 2000)} />
           </Box>
         </Box>
@@ -223,34 +292,39 @@ const LastOutputRenderer = ({
 
     case 'tool_result':
       return (
-        <>
-          <Text dimColor>{'  '}────</Text>
+        <Box flexDirection="column">
+          <Text dimColor>────</Text>
           <Text color={output.isError ? 'red' : undefined} wrap="wrap">
-            {'  '}
             {output.toolName ? `${output.toolName}: ` : ''}
             {truncate(output.toolResult ?? '', 300)}
           </Text>
-        </>
+        </Box>
       );
 
     case 'interruption':
       return (
-        <Text color="yellow">
-          {'  '}⚠ {output.interruptionMessage ?? 'Interrupted'}
-        </Text>
+        <Box flexDirection="column">
+          <Text color="yellow">
+            ⚠ {output.interruptionMessage ?? 'Interrupted'}
+          </Text>
+        </Box>
       );
 
     case 'ongoing':
-      return <Text color="yellow">{'  '}⏳ Still running...</Text>;
+      return (
+        <Box flexDirection="column">
+          <Text color="yellow">⏳ Still running...</Text>
+        </Box>
+      );
 
     case 'plan_exit':
       return (
-        <>
+        <Box flexDirection="column">
           {output.planPreamble ? (
-            <Text dimColor wrap="wrap">{'  '}{truncate(output.planPreamble, 200)}</Text>
+            <Text dimColor wrap="wrap">{truncate(output.planPreamble, 200)}</Text>
           ) : null}
-          <Text color="cyan">{'  '}📋 Plan ready for review</Text>
-        </>
+          <Text color="cyan">📋 Plan ready for review</Text>
+        </Box>
       );
 
     default:

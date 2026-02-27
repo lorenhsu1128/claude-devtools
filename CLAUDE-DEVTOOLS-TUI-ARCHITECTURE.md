@@ -1,218 +1,453 @@
-# Claude-DevTools TUI 架構實作指南 (基於 Node.js + Ink)
+# Claude-DevTools TUI 架構文件
 
-這份文件詳細規劃了如何沿用 `claude-devtools` 現有的 Node.js 核心邏輯（解析、掃描、監聽），透過 **[Ink](https://github.com/vadimdemedes/ink)** 框架，以**改動最少**的方式實作一個 Terminal User Interface (TUI)。
+本文件描述 claude-devtools TUI（終端機使用者介面）的實際架構與實作細節。TUI 是繼 Electron 桌面版和 Docker 獨立伺服器之後的第三種執行模式。
 
 ---
 
-## 1. 架構全景 (Architecture Overview)
+## 1. 概述
 
- TUI 將作為一個全新的「進入點 (Entry Point)」存在，完全繞過 Electron 的 Main/Preload/Renderer 架構，直接調用 `src/main/services` 的核心業務邏輯。
+TUI 使用 **[Ink](https://github.com/vadimdemedes/ink)**（React for CLI）框架，在終端機中渲染互動式介面。它直接呼叫 `src/main/services/` 核心服務，不需要 Electron IPC 或 HTTP 伺服器。
 
-```mermaid
-graph TD
-    subgraph "TUI Process (Node.js)"
-        CLI_Entry["src/tui/index.tsx<br/>指令入口點"]
-        
-        subgraph Ink React Components
-            App[App]
-            Sidebar[ProjectList / SessionList]
-            MainView[Messages / ToolViewer]
-        end
-        
-        subgraph State Management
-            TUI_Store["Zustand Store<br/>for TUI"]
-        end
-        
-        subgraph CoreServices ["Core Services (現有邏輯直接 reuse)"]
-            ProjectScanner[src/main/services/discovery/ProjectScanner]
-            SessionParser[src/main/services/parsing/SessionParser]
-            FileWatcher[src/main/services/infrastructure/FileWatcher]
-            ChunkBuilder[src/main/services/analysis/ChunkBuilder]
-        end
-        
-        CLI_Entry --> App
-        App --> Sidebar
-        App --> MainView
-        App --> TUI_Store
-        
-        TUI_Store -->|1. Scan| ProjectScanner
-        TUI_Store -->|2. Parse| SessionParser
-        TUI_Store -->|3. Format| ChunkBuilder
-        TUI_Store -->|4. Listen| FileWatcher
-    end
-    
-    LocalFS[(~/.claude Local Files)]
-    
-    CoreServices <-->|fs.read / fs.watch| LocalFS
+**啟動指令：**
+```bash
+pnpm tui           # 建置並執行（使用 Vite 打包）
+pnpm tui:build     # 僅建置
+pnpm tui:start     # 執行已建置的版本
 ```
 
-## 2. 目錄結構規劃 (Directory Structure)
+---
 
-在 `src/` 底下新增一個 `tui/` 目錄。這會與現有的 `main/`, `renderer/`, `shared/` 平行。
+## 2. 系統架構圖
 
-```text
-src/
-├── main/       # (保持不變)
-├── preload/    # (保持不變)
-├── renderer/   # (保持不變)
-├── shared/     # (保持不變)
-└── tui/        # [新增] TUI 專屬目錄
-    ├── index.tsx           # TUI 應用啟動入口 (render App)
-    ├── store.ts            # TUI 專屬的狀態管理 (Zustand)
-    ├── components/         # Ink UI 元件
-    │   ├── App.tsx         # 根元件，處理佈局 (Flex row/col)
-    │   ├── Sidebar.tsx     # 左側選單：專案與會話列表
-    │   ├── ChatView.tsx    # 右側主畫面：對話紀錄瀑布流
-    │   └── ui/             # 共用或基礎的視覺元件
-    │       ├── Select.tsx  # 上下鍵選擇清單 (基於 ink-select-input)
-    │       └── Box.tsx     # 封裝帶有邊框的 Box
-    └── hooks/
-        └── useKeyPress.ts  # 封裝鍵盤事件監聽
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TUI 進程 (Node.js)                                          │
+│                                                             │
+│  src/tui/index.tsx                                          │
+│    └─ createLocalServiceContext()   ← 初始化核心服務         │
+│    └─ render(<App />)               ← Ink 渲染              │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Ink React 元件                                      │   │
+│  │  App → BreadcrumbBar + ProjectListView              │   │
+│  │                     + SessionListView               │   │
+│  │                     + ChatView                      │   │
+│  │                     + HelpOverlay                   │   │
+│  │       + StatusBar                                   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Zustand Store (useTuiStore)                         │   │
+│  │  單一扁平 store，無分片設計                            │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  核心服務（直接重用 src/main/services/）               │   │
+│  │  ProjectScanner · SessionParser · ChunkBuilder      │   │
+│  │  SubagentResolver · FileWatcher · DataCache         │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+               ↕ fs.read / fs.watch
+         ~/.claude/ 本機檔案系統
 ```
 
-## 3. 核心技術選型 (Tech Stack Details)
+---
 
-1. **核心框架**:
-   - `ink`: 提供基於 React 的終端機 UI 渲染能力。
-   - `react`: TUI 的元件一樣使用 React 來編寫。
-2. **UI 互動與版面**:
-   - `ink-select-input`: 用於處理由上到下的清單選單（例如專案列表、對話列表）。
-   - `ink-text-input`: 若需要搜尋或文字輸入功能時使用。
-3. **狀態管理**:
-   - `zustand`: 現有網頁端已熟悉，TUI 可以自己建一個簡單的 Store 來放當前選中的 Project ID、Session ID 與 Parse 回來的資料。
-4. **編譯打包**:
-   - 在 `package.json` 加入一套新的腳本，透過 `esbuild` 或使用 `tsx` 直接執行 `src/tui/index.tsx`。
+## 3. 版面配置
 
-## 4. 實作步驟指引 (Implementation Steps)
+TUI 採用**單一全寬面板**設計，根據目前模式顯示不同內容：
 
-### Step 1: 建立 TUI 專屬 Zustand Store (`src/tui/store.ts`)
+```
+┌──────────────────────────────────────────────────────────┐
+│  claude-devtools TUI                                     │  ← 標題列
+│  Projects > MyProject > Fix login bug                    │  ← 導覽列（BreadcrumbBar）
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  [全寬主內容區域]                                          │  ← 依 focusMode 切換：
+│                                                          │    projects → ProjectListView
+│  - projects: 顯示所有專案，含 session 數量                │    sessions → SessionListView
+│  - sessions: 顯示選定專案的所有 sessions                   │    chat     → ChatView
+│  - chat:     顯示聊天記錄，可展開各項目                    │
+│                                                          │
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│  ↑↓:nav  →:select  ←:back  /:search  ?:help  q:quit     │  ← StatusBar
+└──────────────────────────────────────────────────────────┘
+```
 
-這個 Store 的目的是「橋接」Node.js 核心服務與 Ink UI。
+### 版面高度分配
+
+```
+標題列:   1 行
+導覽列:   1 行
+主內容:   flexGrow(1) — 填滿剩餘終端機高度
+StatusBar: 2 行（分隔線 + 文字）
+```
+
+---
+
+## 4. 三種顯示模式
+
+### 4.1 Projects 模式
+
+顯示所有 `~/.claude/projects/` 內的專案，依最近一次 session 時間排序。
+
+```
+Projects
+> my-project         (12)
+  api-service        (7)
+  documentation      (3)
+```
+
+- 數字 = 過濾後的 session 數量
+- `→` 鍵選擇進入 Sessions 模式
+- `q` 鍵退出程式
+
+### 4.2 Sessions 模式
+
+顯示選定專案的所有 sessions，依建立時間排序（最新優先），並以日期分組。
+
+```
+Projects > my-project
+  ── 今天 ──
+> Fix login validation bug      2024-01-15 14:30
+  Add test coverage              2024-01-15 10:15
+  ── 昨天 ──
+  Refactor auth module           2024-01-14 16:00
+```
+
+- `/` 鍵啟動過濾（即時搜尋 session 標題）
+- `→` 鍵選擇進入 Chat 模式
+- `←` 鍵回到 Projects 模式
+
+### 4.3 Chat 模式
+
+顯示選定 session 的完整對話記錄，包含統計資訊、Token 使用量等。
+
+```
+Projects > my-project > Fix login validation bug
+(1/24) [LIVE] · 8 turns · 2m 15s · 45,230 tokens
+████░░░░░░░░░░░░ 45,230 / 200,000 (23%)
+──────────────────────────────────────────────────────────
+▸ › [User] 14:30  Fix the login page validation bug
+  › [AI] 1.2s · Read(2) Edit(1) Bash(1) · 15,280 tokens
+  › [System] pnpm test ── 12 passed
+──────────────────────────────────────────────────────────
+↑↓:nav →:expand ←:back d/u:page c:context r:refresh
+```
+
+---
+
+## 5. 鍵盤操作對照表
+
+| 模式 | 按鍵 | 動作 |
+|------|------|------|
+| **所有** | `?` | 開啟/關閉說明視窗 |
+| **projects** | `↑` / `↓` | 瀏覽專案列表 |
+| **projects** | `→` 或 `Enter` | 選擇專案，進入 sessions |
+| **projects** | `q` | 退出程式 |
+| **sessions** | `↑` / `↓` | 瀏覽 session 列表 |
+| **sessions** | `→` 或 `Enter` | 選擇 session，進入 chat |
+| **sessions** | `←` 或 `Esc` | 回到 projects |
+| **sessions** | `/` | 啟動 session 過濾搜尋 |
+| **chat** | `↑` / `↓` | 逐行捲動（非逐項跳躍） |
+| **chat** | `d` / `u` | 向下/上半頁捲動 |
+| **chat** | `→` | 展開目前聚焦的項目（AI/User/System） |
+| **chat（展開中）** | `↑` / `↓` | 在展開項目內部捲動 |
+| **chat（展開中）** | `←` | 收合並離開子項目 |
+| **chat** | `/` | 啟動聊天記錄內文搜尋 |
+| **chat（搜尋）** | `n` / `N` | 下一個/上一個搜尋結果 |
+| **chat** | `c` | 切換 Context 詳情面板 |
+| **chat（context panel）** | `↑` / `↓` | 瀏覽 context 類別 |
+| **chat（context panel）** | `→` | 展開 context 類別 |
+| **chat（subagent）** | `←` | 回到上層（subagent 向上退出） |
+| **chat** | `r` | 重新整理目前 session |
+
+---
+
+## 6. 資料流程
+
+```
+~/.claude/projects/{encoded-path}/*.jsonl
+    ↓ ServiceContext.projectScanner.listSessions()
+Session[] (id, firstMessage, createdAt, ...)
+    ↓ ServiceContext.sessionParser.parseSession()
+ParsedMessage[]
+    ↓ ServiceContext.subagentResolver.resolveSubagents()
+Process[]（含 subagent 連結）
+    ↓ ServiceContext.chunkBuilder.buildChunks()
+EnhancedChunk[]
+    ↓ transformChunksToConversation()（@renderer/utils/groupTransformer）
+SessionConversation → ChatItem[]
+    ↓ enhanceAIGroup()（@renderer/utils/aiGroupEnhancer）
+EnhancedAIGroup（含 displayItems、linkedTools、lastOutput、summary）
+    ↓
+store.chatItems[]
+    ↓
+ChatView → AIItem / UserItem / SystemItem / CompactItem
+```
+
+---
+
+## 7. Zustand Store 設計
+
+TUI 使用**單一扁平 store**（非分片設計），因為 TUI 同時只會顯示一個畫面，不需要多分頁隔離。
+
+### 主要狀態欄位
 
 ```typescript
-import { create } from 'zustand';
-import { ProjectScanner } from '../main/services/discovery/ProjectScanner';
-import { SessionParser } from '../main/services/parsing/SessionParser';
-import { ChunkBuilder } from '../main/services/analysis/ChunkBuilder';
-import { FileWatcher } from '../main/services/infrastructure/FileWatcher';
-// 重用 shared 的型別
-import type { Project, SessionLight, Chunk } from '../shared/types';
-
 interface TuiState {
+  // 模式
+  focusMode: 'projects' | 'sessions' | 'chat';
+
+  // 專案列表
   projects: Project[];
-  sessions: SessionLight[];
-  activeProjectId: string | null;
-  activeSessionId: string | null;
-  chunks: Chunk[];
-  
-  loadProjects: () => Promise<void>;
-  selectProject: (projectId: string) => Promise<void>;
-  selectSession: (sessionId: string) => Promise<void>;
-}
+  selectedProjectIndex: number;
+  selectedProjectId: string | null;
+  projectsLoading: boolean;
+  projectSessionCounts: Map<string, number>;
 
-export const useTuiStore = create<TuiState>((set, get) => ({
-  projects: [],
-  sessions: [],
-  activeProjectId: null,
-  activeSessionId: null,
-  chunks: [],
+  // Session 列表
+  sessions: Session[];
+  selectedSessionIndex: number;
+  selectedSessionId: string | null;
+  sessionsLoading: boolean;
 
-  loadProjects: async () => {
-    // 直接呼叫 main 層的邏輯！
-    const scanner = new ProjectScanner();
-    const projects = await scanner.scanProjects();
-    set({ projects });
-  },
+  // Session 過濾
+  sessionFilterActive: boolean;
+  sessionFilter: string;
 
-  selectProject: async (projectId) => {
-    const scanner = new ProjectScanner();
-    const sessions = await scanner.scanSessions(projectId);
-    set({ activeProjectId: projectId, sessions });
-  },
+  // 聊天內容
+  chatItems: ChatItem[];
+  chatScrollOffset: number;         // 目前聚焦的項目索引
+  chatItemLineOffset: number;       // 在項目內部的行偏移量（逐行捲動）
 
-  selectSession: async (sessionId) => {
-    const { activeProjectId } = get();
-    if (!activeProjectId) return;
-    
-    // 這裡同樣直接調用解析器與轉換器
-    const parser = new SessionParser();
-    const data = await parser.parseSession(activeProjectId, sessionId);
-    
-    const chunker = new ChunkBuilder();
-    const chunks = chunker.buildChunks(data.messages);
-    
-    set({ activeSessionId: sessionId, chunks });
-  }
-}));
-```
+  // 展開狀態
+  expandedAIGroupIds: Set<string>;
+  expandedAIGroupScrollOffsets: Map<string, number>;
+  expandedToolIds: Set<string>;
+  expandedUserIds: Set<string>;
+  expandedSystemIds: Set<string>;
+  expandedSystemScrollOffsets: Map<string, number>;
 
-### Step 2: 建立 Ink 基本版面佈局 (`src/tui/components/App.tsx`)
+  // Subagent 鑽取
+  subagentStack: SubagentStackEntry[];   // 儲存每層的完整狀態
+  subagentLabel: string | null;
 
-使用 Ink 的 `<Box>` 元件來取代網頁的 `<div>`，它預設就是 Flexbox。
+  // 搜尋
+  chatSearchActive: boolean;
+  chatSearchQuery: string;
+  chatSearchMatches: ChatSearchMatch[];
+  currentChatSearchIndex: number;
 
-```tsx
-import React, { useEffect } from 'react';
-import { Box, Text } from 'ink';
-import { useTuiStore } from '../store';
-import { Sidebar } from './Sidebar';
-import { ChatView } from './ChatView';
+  // Context 面板
+  contextStatsMap: Map<string, ContextStats>;
+  contextPhaseInfo: ContextPhaseInfo | null;
+  showContextPanel: boolean;
+  contextPanelCursorIndex: number;
+  expandedContextCategory: string | null;
 
-export const App = () => {
-  const loadProjects = useTuiStore(s => s.loadProjects);
-
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  return (
-    <Box flexDirection="column" width="100%" height="100%">
-      {/* 頂部標題列 */}
-      <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-        <Text bold color="cyan">Claude DevTools TUI</Text>
-      </Box>
-
-      {/* 左右分屏 */}
-      <Box flexDirection="row" flexGrow={1}>
-        {/* 左側邊欄 (固定寬度) */}
-        <Box width={30} borderStyle="single" borderRight={false}>
-          <Sidebar />
-        </Box>
-
-        {/* 右側主畫面 (自適應寬度) */}
-        <Box flexGrow={1} borderStyle="single">
-          <ChatView />
-        </Box>
-      </Box>
-    </Box>
-  );
-};
-```
-
-### Step 3: 修改建置腳本 (`package.json`)
-
-為了讓開發者可以輕易啟動 TUI，我們不需要經過 Electron 打包。直接運用 `vite-node` 或 `tsx` 來執行 TypeScript。
-
-```json
-{
-  "scripts": {
-    "tui": "tsx src/tui/index.tsx",
-    "tui:build": "esbuild src/tui/index.tsx --bundle --platform=node --target=node18 --outfile=dist/tui.js"
-  }
+  // UI 狀態
+  showHelp: boolean;
+  sessionIsOngoing: boolean;
 }
 ```
-
-## 5. 難點與注意事項 (Challenges & Gotchas)
-
-選擇「選項一」雖然改動最小，但仍有幾個需克服的 TUI 開發痛點：
-
-1. **圖表渲染能力受限**：
-   原本地的 `Renderer` 有圓餅圖、長條圖等。在 Ink 裡面，必須改用純 ASCII 字元 (例如 `████░░░░`) 來模擬長度與百分比。可以寫一個專屬的 `<TokenBar>` 元件來轉換數字為進度條字元。
-2. **滾動 (Scrolling) 實作**：
-   Ink 原生不支援像是瀏覽器那樣的滑鼠滾輪或溢出隱藏 (`overflow: auto`)。
-   實作上聊天區塊的列表如果太長，必須使用第三方的 `ink-virtual-list` 或是自己紀錄 `offset`，透過鍵盤上下鍵來裁切顯示的 Array 片段。
-3. **即時監聽 (FileWatcher) 的結合**：
-   前端 React 有 `useEffect` 接收 IPC 廣播，在 TUI Store 裡，當觸發 `selectSession` 時，要在 Store 內部啟動 `main` 的 `FileWatcher`，並綁定一個 callback 讓 Store 更新資料，以實現終端機畫面的即時刷新。
 
 ---
 
-整體而言，這個方案將完全 **零侵入** 地保留您現有的核心解析邏輯，只需要新增大約 5~10 個 Ink 的 React 元件檔以及一份獨立的 Store 就能讓 TUI 順利跑起來。
+## 8. 逐行捲動系統
+
+TUI 的聊天捲動採用**逐行**（line-by-line）移動，而非逐項目（item-by-item）跳躍，提供更流暢的閱讀體驗。
+
+### 核心概念
+
+- **`chatScrollOffset`**：目前聚焦的第一個可見 ChatItem 的索引
+- **`chatItemLineOffset`**：在目前聚焦項目內部的行位移（0 = 頂部）
+- **`estimateItemRows()`**：估算每個 ChatItem 佔用的終端機行數
+
+### 視覺渲染技巧
+
+使用 Ink 的 `overflow="hidden"` 搭配負數 `marginTop` 實現視覺上的行滾動：
+
+```tsx
+<Box flexDirection="column" paddingX={1} flexGrow={1} overflow="hidden">
+  <Box flexDirection="column" marginTop={-chatItemLineOffset}>
+    {visibleItems.map(...)}
+  </Box>
+</Box>
+```
+
+### 捲動邏輯
+
+**向下移動（↓）：**
+1. 若 `chatItemLineOffset + 1 < itemHeight`：只增加 `chatItemLineOffset`（在項目內移動）
+2. 否則：`chatScrollOffset + 1`，`chatItemLineOffset = 0`（移到下一個項目）
+
+**向下移動（↑）：**
+1. 若 `chatItemLineOffset > 0`：只減少 `chatItemLineOffset`
+2. 否則：`chatScrollOffset - 1`，`chatItemLineOffset = prevItemHeight - 1`
+
+---
+
+## 9. Subagent 鑽取導航
+
+當進入一個 Task 型工具呼叫（subagent），TUI 會將目前完整狀態壓入 `subagentStack`，然後載入該 subagent 的 session 資料：
+
+```typescript
+interface SubagentStackEntry {
+  chatItems: ChatItem[];
+  chatScrollOffset: number;
+  chatItemLineOffset: number;
+  expandedAIGroupIds: Set<string>;
+  expandedAIGroupScrollOffsets: Map<string, number>;
+  expandedToolIds: Set<string>;
+  expandedUserIds: Set<string>;
+  expandedSystemIds: Set<string>;
+  expandedSystemScrollOffsets: Map<string, number>;
+  contextStatsMap: Map<string, ContextStats>;
+  contextPhaseInfo: ContextPhaseInfo | null;
+  sessionIsOngoing: boolean;
+  label: string; // 導覽列顯示的標籤
+}
+```
+
+`←` 鍵呼叫 `goBackFromSubagent()`，從 stack pop 並完整還原上一層狀態。
+
+BreadcrumbBar 會自動從 `subagentStack` 和 `subagentLabel` 建構完整路徑：
+```
+Projects > my-project > Main Session > Subagent A > Subagent B
+```
+
+---
+
+## 10. 導覽列（BreadcrumbBar）
+
+導覽列位於標題列正下方，即時反映目前在導覽層次中的位置：
+
+| 模式 | 顯示內容 |
+|------|---------|
+| projects | `Projects`（青色） |
+| sessions | `Projects`（暗色）`>`  `專案名稱`（青色） |
+| chat（無子代理）| `Projects > 專案名稱 > Session 標題`（最後一段青色） |
+| chat（有子代理）| `Projects > 專案名稱 > Session > Subagent A > Subagent B`（最後一段青色） |
+
+每個段落最多顯示 40 個字元，超過則以 `…` 截斷。
+
+---
+
+## 11. 元件說明
+
+### App.tsx
+根佈局元件。掛載時呼叫 `loadProjects()`，根據 `focusMode` 條件式渲染三種主畫面之一。
+
+### ProjectListView.tsx
+全寬專案列表。計算捲動起始點（`computeScrollStart`），確保選取項目維持在可見範圍內。
+
+### SessionListView.tsx
+全寬 Session 列表，支援：
+- 日期分組（今天、昨天、本週、更早）
+- 即時過濾（`/` 鍵啟動，`ink-text-input` 處理輸入）
+- 連線中（ongoing）session 標記
+
+### ChatView.tsx
+全寬聊天記錄瀑布流。包含：
+- 統計標頭（進度、圈數、總時間、Token 數）
+- Token 進度條（`TokenBar`）
+- 搜尋欄（`/` 鍵啟動）
+- Context 面板（`c` 鍵切換，僅 AI 項目可用）
+- 聊天項目列表（逐行捲動）
+- 說明列（操作提示）
+
+### AIItem.tsx
+渲染 AI 回應。摺疊狀態顯示摘要；展開後顯示完整的 `displayItems` 陣列，包含思考過程、工具呼叫、子代理呼叫、輸出文字等。
+
+### UserItem.tsx
+渲染使用者訊息，支援展開/收合（超過 15 行時截斷）。
+
+### SystemItem.tsx
+渲染系統指令輸出，超過 8 行時截斷，展開後支援內部分頁捲動。
+
+### ToolItem.tsx
+渲染工具呼叫（Read / Bash / Edit 等），可展開顯示工具輸出預覽。
+
+### CompactItem.tsx
+渲染對話壓縮邊界（Compaction Boundary）。
+
+### ContextPanel.tsx
+顯示某個 AI 回應的 Context 注入詳情，分 6 個類別（claude-md、mentioned-file、tool-output、thinking-text、team-coordination、user-message）。
+
+### BreadcrumbBar.tsx
+導覽列元件，自動從 store 狀態建構路徑文字。
+
+### TokenBar.tsx
+ASCII 式 Token 使用量進度條（`████░░░░ 45,230 / 200,000 (23%)`）。
+
+### StatusBar.tsx
+底部說明列，依 `focusMode` 顯示對應的按鍵說明。
+
+### HelpOverlay.tsx
+按 `?` 觸發的全螢幕說明視窗，列出完整鍵盤操作說明。
+
+### MarkdownText.tsx
+在終端機中渲染 Markdown，支援：標題（`#`/`##`/`###`）、粗體（`**`）、行內程式碼（`` ` ``）、圍欄程式碼區塊（```` ``` ````）、有序/無序清單、引言（`>`）。
+
+### LoadingSpinner.tsx
+`ink-spinner` 的包裝元件，用於載入資料時顯示旋轉動畫。
+
+---
+
+## 12. Hooks
+
+### useKeymap.ts
+集中鍵盤事件分派，在根 `App` 元件中以 `useInput()` 監聽按鍵，根據 `focusMode` 路由至不同處理邏輯。**所有鍵盤邏輯都在此集中管理，避免子元件發生按鍵衝突。**
+
+### useScrollWindow.ts
+提供 `useScrollWindow()` hook，根據終端機高度和各項目估算行數，計算目前視窗應顯示的 ChatItem 切片（`startIndex`、`count`）。
+
+也匯出工具函式：
+- `estimateItemRows()` — 估算單一項目高度
+- `getItemHeight()` — 從 store 狀態快速取得項目高度
+
+### useFileWatcher.ts
+訂閱 `ServiceContext.fileWatcher` 的 `file-change` 事件，在活躍 session 的 JSONL 檔案有異動時，自動呼叫 `refreshCurrentSession()`，實現即時更新。
+
+---
+
+## 13. 工具模組
+
+### utils/initServiceContext.ts
+工廠函式，建立並啟動本機 `ServiceContext`，供整個 TUI 共用。支援 `CLAUDE_ROOT` 環境變數覆蓋 `~/.claude/` 路徑。
+
+### utils/dateGrouping.ts
+將 Session 列表依建立時間分組為「今天」、「昨天」、「本週」、「更早」等類別。
+
+### utils/textWrap.ts
+`truncateLines(text, maxLines)` — 截斷文字並回傳剩餘行數，供 UserItem 和 SystemItem 決定是否顯示「展開」提示。
+
+### utils/syntaxHighlight.tsx
+在終端機中進行程式碼語法高亮，支援 TypeScript、JavaScript、Python、Rust、Go、Ruby、PHP、SQL、Bash、JSON 等語言。
+
+---
+
+## 14. 建置設定
+
+| 檔案 | 說明 |
+|------|------|
+| `vite.tui.config.ts` | TUI 專屬的 Vite 建置設定，輸出至 `dist-tui/`，target 為 Node 20 |
+| `tsconfig.json` | 含 `@tui/*` → `src/tui/*` 路徑別名 |
+| `eslint.config.js` | TUI 的 boundary 規則：`{ from: 'tui', allow: ['tui', 'main', 'shared', 'renderer'] }` |
+| `knip.json` | 入口設定含 `src/tui/index.tsx` 和 `vite.tui.config.ts` |
+
+---
+
+## 15. 與 Electron / HTTP 模式的差異
+
+| 面向 | Electron 模式 | HTTP/Docker 模式 | TUI 模式 |
+|------|--------------|-----------------|---------|
+| 進程架構 | Main + Preload + Renderer (3 進程) | Node.js + Fastify (2 模組) | 單一 Node.js 進程 |
+| UI 框架 | React + Chromium | React + Browser | Ink（React for CLI）|
+| 通訊方式 | Electron IPC | HTTP + SSE | 直接函式呼叫 |
+| 狀態管理 | Zustand（14 個分片）| Zustand（14 個分片）| Zustand（單一扁平 store）|
+| 更新方式 | IPC 推送 | SSE 推送 | FileWatcher callback |
+| 多分頁 | 支援（最多 4 窗格）| 不支援 | 不支援 |
+| SSH 遠端 | 支援 | 不支援 | 不支援 |

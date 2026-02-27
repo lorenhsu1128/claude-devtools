@@ -10,36 +10,33 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Global',
     keys: [
-      ['Tab', 'Switch panel focus'],
       ['?', 'Toggle this help'],
     ],
   },
   {
     title: 'Projects',
     keys: [
-      ['j/\u2193', 'Move down'],
-      ['k/\u2191', 'Move up'],
-      ['Enter', 'Select project'],
+      ['\u2191/\u2193', 'Move up/down'],
+      ['\u2192', 'Select project'],
       ['q', 'Quit'],
     ],
   },
   {
     title: 'Sessions',
     keys: [
-      ['j/\u2193', 'Move down'],
-      ['k/\u2191', 'Move up'],
-      ['Enter', 'Select session'],
+      ['\u2191/\u2193', 'Move up/down'],
+      ['\u2192', 'Select session'],
+      ['\u2190', 'Back to projects'],
       ['/', 'Filter sessions'],
-      ['Esc', 'Back to projects'],
     ],
   },
   {
     title: 'Chat',
     keys: [
-      ['j/\u2193', 'Scroll down'],
-      ['k/\u2191', 'Scroll up'],
+      ['\u2191/\u2193', 'Scroll / navigate'],
+      ['\u2192', 'Expand / go deeper'],
+      ['\u2190', 'Collapse / go back'],
       ['d/u', 'Page down/up'],
-      ['Enter', 'Expand/collapse'],
       ['/', 'Search in chat'],
       ['n/N', 'Next/prev match'],
       ['c', 'Context panel'],

@@ -1,5 +1,5 @@
 /**
- * Right panel — scrollable chat items view.
+ * Full-width scrollable chat items view.
  *
  * Uses offset-based windowing: renders a slice of chatItems
  * based on terminal height. Ink has no overflow:scroll.
@@ -8,7 +8,6 @@
 import { useMemo } from 'react';
 
 import { formatDuration } from '@renderer/utils/formatters';
-import { formatTokensCompact } from '@shared/utils/tokenFormatting';
 import { truncateLines } from '@tui/utils/textWrap';
 import { Box, Text } from 'ink';
 import TextInput from 'ink-text-input';
@@ -51,9 +50,9 @@ function computeSessionStats(items: ChatItem[]): {
 
 export const ChatView = (): JSX.Element => {
   const {
-    focusMode,
     chatItems,
     chatScrollOffset,
+    chatItemLineOffset,
     chatLoading,
     chatError,
     expandedAIGroupIds,
@@ -62,11 +61,8 @@ export const ChatView = (): JSX.Element => {
     expandedSystemIds,
     expandedSystemScrollOffsets,
     selectedSessionId,
-    sessions,
     sessionIsOngoing,
     showContextPanel,
-    subagentStack,
-    subagentLabel,
     chatSearchActive,
     chatSearchQuery,
     chatSearchMatches,
@@ -75,19 +71,14 @@ export const ChatView = (): JSX.Element => {
     deactivateChatSearch,
   } = useTuiStore();
 
-  const isFocused = focusMode === 'chat';
   const window = useScrollWindow(chatItems, chatScrollOffset);
-
-  // Find session name for header
-  const session = sessions.find((s) => s.id === selectedSessionId);
-  const sessionLabel = session?.firstMessage?.slice(0, 50) ?? selectedSessionId ?? 'No session';
 
   // Compute session stats
   const stats = useMemo(() => computeSessionStats(chatItems), [chatItems]);
 
   if (!selectedSessionId) {
     return (
-      <Box flexDirection="column" flexGrow={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box flexDirection="column" flexGrow={1} paddingX={1}>
         <Text dimColor>Select a session to view</Text>
       </Box>
     );
@@ -95,7 +86,7 @@ export const ChatView = (): JSX.Element => {
 
   if (chatLoading) {
     return (
-      <Box flexDirection="column" flexGrow={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box flexDirection="column" flexGrow={1} paddingX={1}>
         <LoadingSpinner label="Loading session..." />
       </Box>
     );
@@ -103,7 +94,7 @@ export const ChatView = (): JSX.Element => {
 
   if (chatError) {
     return (
-      <Box flexDirection="column" flexGrow={1} borderStyle="single" borderColor="red" paddingX={1}>
+      <Box flexDirection="column" flexGrow={1} paddingX={1}>
         <Text color="red">Error: {chatError}</Text>
       </Box>
     );
@@ -114,40 +105,15 @@ export const ChatView = (): JSX.Element => {
   const totalItems = chatItems.length;
 
   return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      borderStyle="single"
-      borderColor={isFocused ? 'cyan' : 'gray'}
-    >
-      {/* Header with breadcrumbs */}
-      <Box flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" flexGrow={1}>
+      {/* Stats header */}
+      <Box flexDirection="column" paddingX={1} flexShrink={0}>
         <Box>
-          {subagentStack.length > 0 ? (
-            <Text bold wrap="truncate">
-              <Text dimColor>{subagentStack[0].label}</Text>
-              {subagentStack.slice(1).map((entry, i) => (
-                <Text key={i} dimColor> {'>'} {entry.label}</Text>
-              ))}
-              <Text dimColor> {'>'} </Text>
-              <Text color={isFocused ? 'cyan' : 'magenta'}>{subagentLabel}</Text>
-            </Text>
-          ) : (
-            <Text bold color={isFocused ? 'cyan' : 'white'}>
-              Session: <Text wrap="truncate">{sessionLabel}</Text>
-            </Text>
-          )}
           <Text dimColor>
-            {' '}
             ({chatScrollOffset + 1}/{totalItems})
             {sessionIsOngoing ? ' [LIVE]' : ''}
-          </Text>
-        </Box>
-        {/* Stats line with token bar */}
-        <Box>
-          <Text dimColor>
-            {stats.turnCount} turns · {formatDuration(stats.totalDurationMs)} ·{' '}
-            {formatTokensCompact(stats.totalTokens)} tokens
+            {' · '}{stats.turnCount} turns · {formatDuration(stats.totalDurationMs)} ·{' '}
+            {stats.totalTokens.toLocaleString()} tokens
           </Text>
         </Box>
         <TokenBar current={stats.totalTokens} max={DEFAULT_CONTEXT_WINDOW} width={16} />
@@ -181,7 +147,7 @@ export const ChatView = (): JSX.Element => {
       ) : null}
 
       {/* Context panel */}
-      {showContextPanel && isFocused ? (
+      {showContextPanel ? (
         (() => {
           const focusedItem = chatItems[chatScrollOffset];
           if (focusedItem?.type === 'ai') {
@@ -200,24 +166,22 @@ export const ChatView = (): JSX.Element => {
         })()
       ) : null}
 
-      {/* Chat items */}
-      <Box flexDirection="column" paddingX={1} flexGrow={1}>
+      {/* Chat items — overflow="hidden" + marginTop for line-by-line visual scrolling */}
+      <Box flexDirection="column" paddingX={1} flexGrow={1} overflow="hidden">
+        <Box flexDirection="column" marginTop={-chatItemLineOffset}>
         {visibleItems.map((item, i) => {
           const actualIndex = window.startIndex + i;
-          const isFocusedItem = i === 0 && isFocused;
+          const isFocusedItem = i === 0;
           const isAIExpanded = item.type === 'ai' && expandedAIGroupIds.has(item.group.id);
           const isUserExpanded = item.type === 'user' && expandedUserIds.has(item.group.id);
           const isSystemExpanded = item.type === 'system' && expandedSystemIds.has(item.group.id);
-          // Check if user item has truncated content (matching UserItem's MAX_TEXT_LINES = 15)
           const isUserExpandable = item.type === 'user'
             && truncateLines(item.group.content.text ?? item.group.content.rawText ?? '', 15).remaining > 0;
           const isSystemExpandable = item.type === 'system'
             && truncateLines(item.group.commandOutput ?? '', MAX_OUTPUT_LINES).remaining > 0;
-          // Check if current item has a search match
           const hasSearchMatch = chatSearchMatches.length > 0
             && currentChatSearchIndex >= 0
             && chatSearchMatches[currentChatSearchIndex]?.itemIndex === actualIndex;
-          // AI/expandable items: ▸/▾ (expandable), others: › (non-expandable)
           const cursor = isFocusedItem
             ? item.type === 'ai'
               ? isAIExpanded ? '▾ ' : '▸ '
@@ -238,6 +202,7 @@ export const ChatView = (): JSX.Element => {
                 <AIItem
                   group={item.group}
                   expanded={isAIExpanded}
+                  isFocused={isFocusedItem}
                   displayOffset={isAIExpanded ? (expandedAIGroupScrollOffsets.get(item.group.id) ?? 0) : 0}
                   maxDisplayLines={window.availableRows - 2}
                 />
@@ -260,30 +225,38 @@ export const ChatView = (): JSX.Element => {
               itemNode = null;
           }
 
+          // When a sub-item inside an expanded AI group has cursor, don't inverse the chat-level cursor
+          const subItemHasCursor = isFocusedItem && isAIExpanded
+            && (expandedAIGroupScrollOffsets.get(item.group.id) ?? 0) > 0;
+
           return (
             <Box key={item.group.id} flexDirection="row">
-              <Text color={isFocusedItem ? 'cyan' : hasSearchMatch ? 'yellow' : undefined}>{cursor}</Text>
+              <Text
+                color={isFocusedItem ? 'cyan' : hasSearchMatch ? 'yellow' : undefined}
+                inverse={isFocusedItem && !subItemHasCursor}
+              >
+                {cursor}
+              </Text>
               <Box flexDirection="column" flexGrow={1}>
                 {itemNode}
               </Box>
             </Box>
           );
         })}
+        </Box>
       </Box>
 
-      {/* Help bar — single line, truncated to prevent wrap overflow */}
-      {isFocused ? (
-        <Box flexDirection="column">
-          <Box paddingX={1}>
-            <Text dimColor wrap="truncate">{'─'.repeat(60)}</Text>
-          </Box>
-          <Box paddingX={1}>
-            <Text dimColor wrap="truncate">
-              j/k:nav Enter:expand d/u:page c:context r:refresh Esc:back
-            </Text>
-          </Box>
+      {/* Help bar */}
+      <Box flexDirection="column" flexShrink={0}>
+        <Box paddingX={1}>
+          <Text dimColor wrap="truncate">{'─'.repeat(60)}</Text>
         </Box>
-      ) : null}
+        <Box paddingX={1}>
+          <Text dimColor wrap="truncate">
+            ↑↓:nav →:expand ←:back d/u:page c:context r:refresh
+          </Text>
+        </Box>
+      </Box>
     </Box>
   );
 };

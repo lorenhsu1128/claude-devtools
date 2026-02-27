@@ -206,6 +206,63 @@ Every tool call is paired with its result in an expandable card. Specialized vie
 
 ---
 
+## TUI 終端機模式
+
+在終端機中直接瀏覽 Claude Code session，無需開啟桌面應用程式。
+
+```bash
+pnpm tui
+```
+
+### 版面配置
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  claude-devtools TUI                                     │
+│  Projects > my-project > Fix login validation bug        │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  (1/24) [LIVE] · 8 turns · 2m 15s · 45,230 tokens       │
+│  ████░░░░░░░░░░░░ 45,230 / 200,000 (23%)                │
+│  ────────────────────────────────────────────────────    │
+│  ▸ › [User] 14:30  Fix the login page validation bug    │
+│    › [AI] 1.2s · Read(2) Edit(1) · 15,280 tokens        │
+│    › [System] pnpm test ── 12 passed                    │
+│                                                          │
+│  ────────────────────────────────────────────────────    │
+│  ↑↓:nav  →:expand  ←:back  d/u:page  c:context  ?:help │
+├──────────────────────────────────────────────────────────┤
+│  ↑↓:nav  →:select  ←:back  /:filter  ?:help  q:quit     │
+└──────────────────────────────────────────────────────────┘
+```
+
+### TUI 操作說明
+
+| 按鍵 | 動作 |
+|------|------|
+| `↑` / `↓` | 瀏覽列表或逐行捲動聊天記錄 |
+| `→` | 選擇項目 / 展開 AI 回應 |
+| `←` | 返回上一層 / 收合項目 |
+| `d` / `u` | 聊天模式向下/上半頁 |
+| `/` | Session 列表過濾 / 聊天記錄搜尋 |
+| `c` | 切換 Context 注入詳情面板 |
+| `r` | 重新整理目前 session |
+| `?` | 說明視窗 |
+| `q` | 退出（在專案列表模式）|
+
+### TUI 功能特色
+
+- **三層導覽**：專案列表 → Session 列表 → 聊天記錄
+- **導覽列（Breadcrumb）**：即時顯示目前所在位置
+- **逐行捲動**：聊天記錄 ↑/↓ 每次移動一行，不會跳項目
+- **Subagent 鑽取**：進入 Task 工具呼叫查看子代理詳情，支援多層巢狀
+- **即時更新**：監聽 JSONL 檔案變更，自動重新整理進行中的 session
+- **Session 過濾**：在 session 列表中按 `/` 即時搜尋
+- **聊天搜尋**：在聊天模式按 `/` 搜尋記錄，高亮匹配項目
+- **Syntax Highlighting**：程式碼區塊依語言自動上色
+
+---
+
 ## Docker / Standalone Deployment
 
 Run claude-devtools without Electron — in Docker, on a remote server, or anywhere Node.js runs.

@@ -2,7 +2,6 @@
  * ASCII token progress bar: ████░░░░ 72.5k / 100k (72%)
  */
 
-import { formatTokensCompact } from '@shared/utils/tokenFormatting';
 import { Text } from 'ink';
 
 interface TokenBarProps {
@@ -23,7 +22,7 @@ export const TokenBar = ({ current, max, width = 20 }: TokenBarProps): JSX.Eleme
       <Text dimColor>{'░'.repeat(empty)}</Text>
       <Text dimColor>
         {' '}
-        {formatTokensCompact(current)} / {formatTokensCompact(max)} ({pct}%)
+        {current.toLocaleString()} / {max.toLocaleString()} ({pct}%)
       </Text>
     </Text>
   );

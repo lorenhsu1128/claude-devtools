@@ -11,9 +11,10 @@ import { useTuiStore } from '../store';
 
 import type { ChatItem } from '@renderer/types/groups';
 import type { EnhancedAIGroup } from '@renderer/types/groups';
+import type { TuiState } from '../store';
 
-/** Overhead rows: header (3), status bar (1), chat header (3), borders (2), helpbar divider+text (2) */
-const CHROME_ROWS = 11;
+/** Overhead rows: title(1) + breadcrumb(1) + stats(1) + tokenbar(1) + helpbar divider+text(2) + statusbar(2) + margin(1) */
+const CHROME_ROWS = 9;
 
 /**
  * Estimate how many terminal rows a ChatItem will occupy,
@@ -25,7 +26,7 @@ const USER_MAX_TEXT_LINES = 15;
 /** Max output lines for system items (must match SystemItem.MAX_OUTPUT_LINES) */
 const SYSTEM_MAX_OUTPUT_LINES = 8;
 
-function estimateItemRows(
+export function estimateItemRows(
   item: ChatItem,
   columns: number,
   expandedIds: Set<string>,
@@ -77,11 +78,19 @@ function estimateItemRows(
           }
         }
       }
-      const offset = scrollOffsets.get(item.group.id) ?? 0;
+      // Offset is cursor position: 0 = header, 1..N = sub-items (1-based)
+      const cursorOffset = scrollOffsets.get(item.group.id) ?? 0;
       const maxVisible = Math.max(availableRows - 2, 1);
-      const visibleEntries = Math.min(totalEntries - offset, maxVisible);
-      const hiddenAbove = offset > 0 ? 1 : 0; // "↑ N hidden" indicator
-      const hiddenBelow = totalEntries - offset - maxVisible > 0 ? 1 : 0; // "↓ N more" indicator
+      const cursorItemIndex = cursorOffset > 0 ? cursorOffset - 1 : 0;
+      const scrollStart = totalEntries <= maxVisible
+        ? 0
+        : Math.max(0, Math.min(
+            cursorItemIndex - Math.min(2, Math.floor(maxVisible / 4)),
+            totalEntries - maxVisible,
+          ));
+      const visibleEntries = Math.min(totalEntries - scrollStart, maxVisible);
+      const hiddenAbove = scrollStart > 0 ? 1 : 0; // "↑ N hidden" indicator
+      const hiddenBelow = totalEntries - scrollStart - maxVisible > 0 ? 1 : 0; // "↓ N more" indicator
       return 1 + hiddenAbove + visibleEntries + hiddenBelow + 1; // header + content + margin
     }
     case 'system': {
@@ -117,6 +126,29 @@ function estimateItemRows(
   }
 }
 
+/**
+ * Convenience wrapper to compute item height from store state.
+ * Useful in useKeymap where we don't want to pass 8 params.
+ */
+export function getItemHeight(
+  item: ChatItem,
+  termCols: number,
+  store: Pick<TuiState, 'expandedAIGroupIds' | 'expandedAIGroupScrollOffsets' | 'expandedToolIds' | 'expandedUserIds' | 'expandedSystemIds' | 'expandedSystemScrollOffsets'>,
+  availableRows: number,
+): number {
+  return estimateItemRows(
+    item,
+    termCols,
+    store.expandedAIGroupIds,
+    store.expandedAIGroupScrollOffsets,
+    availableRows,
+    store.expandedToolIds,
+    store.expandedUserIds,
+    store.expandedSystemIds,
+    store.expandedSystemScrollOffsets,
+  );
+}
+
 export interface ScrollWindow {
   /** Start index in the chatItems array */
   startIndex: number;
@@ -128,7 +160,8 @@ export interface ScrollWindow {
 
 /**
  * Compute the visible window of chat items based on scroll offset
- * and terminal dimensions.
+ * and terminal dimensions. Accounts for chatItemLineOffset to show
+ * extra items when the first item is partially scrolled.
  */
 export function useScrollWindow(
   chatItems: ChatItem[],
@@ -139,9 +172,14 @@ export function useScrollWindow(
   const termCols = stdout?.columns ?? 80;
   const availableRows = Math.max(termRows - CHROME_ROWS, 5);
 
-  const { expandedAIGroupIds, expandedAIGroupScrollOffsets, expandedToolIds, expandedUserIds, expandedSystemIds, expandedSystemScrollOffsets } = useTuiStore();
+  const {
+    expandedAIGroupIds, expandedAIGroupScrollOffsets, expandedToolIds,
+    expandedUserIds, expandedSystemIds, expandedSystemScrollOffsets,
+    chatItemLineOffset,
+  } = useTuiStore();
 
-  let rowsBudget = availableRows;
+  // Add extra rows budget from the partially-scrolled first item
+  let rowsBudget = availableRows + chatItemLineOffset;
   let count = 0;
 
   for (let i = scrollOffset; i < chatItems.length && rowsBudget > 0; i++) {

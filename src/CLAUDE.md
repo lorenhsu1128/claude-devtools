@@ -1,12 +1,16 @@
-# src/ Structure
+# src/ 目錄結構
 
-Three-process Electron architecture:
+## 執行模式與進程架構
 
-## Processes
-- `main/` - Node.js runtime (file system, IPC, lifecycle)
-- `preload/` - Secure bridge (contextBridge API)
-- `renderer/` - React/Chromium (UI, state, visualization)
-- `shared/` - Cross-process types and utilities
+### Electron 模式（三進程）
+- `main/` - Node.js runtime（檔案系統、IPC、生命週期管理）
+- `preload/` - 安全橋接層（contextBridge API）
+- `renderer/` - React/Chromium（UI、狀態管理、視覺化）
+- `shared/` - 跨進程共用型別與工具函式
+
+### TUI 模式（單一 Node.js 進程）
+- `tui/` - Ink（React for CLI）終端機介面，直接呼叫 `main/services/` 核心服務
+- 詳細說明請參閱 `src/tui/CLAUDE.md`
 
 ## Import Pattern
 Use barrel exports from domain folders:

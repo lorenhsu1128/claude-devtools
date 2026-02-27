@@ -51,6 +51,7 @@ export type FocusMode = 'projects' | 'sessions' | 'chat';
 export interface SubagentStackEntry {
   chatItems: ChatItem[];
   chatScrollOffset: number;
+  chatItemLineOffset: number;
   expandedAIGroupIds: Set<string>;
   expandedAIGroupScrollOffsets: Map<string, number>;
   expandedToolIds: Set<string>;
@@ -92,6 +93,8 @@ export interface TuiState {
   // Chat
   chatItems: ChatItem[];
   chatScrollOffset: number;
+  /** Line offset within the currently focused chat item (for line-by-line scrolling). */
+  chatItemLineOffset: number;
   expandedAIGroupIds: Set<string>;
   /** Per-group display item scroll offset for expanded AI groups */
   expandedAIGroupScrollOffsets: Map<string, number>;
@@ -139,7 +142,6 @@ export interface TuiState {
   selectSession: (sessionId: string) => Promise<void>;
   refreshCurrentSession: () => Promise<void>;
   refreshSessionList: () => Promise<void>;
-  setFocusMode: (mode: FocusMode) => void;
   goBackToProjects: () => void;
   goBackToSessions: () => void;
   drillDownSubagent: (process: Process) => Promise<void>;
@@ -194,6 +196,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
 
   chatItems: [],
   chatScrollOffset: 0,
+  chatItemLineOffset: 0,
   expandedAIGroupIds: new Set<string>(),
   expandedAIGroupScrollOffsets: new Map(),
   expandedToolIds: new Set<string>(),
@@ -293,6 +296,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
       chatError: null,
       chatItems: [],
       chatScrollOffset: 0,
+      chatItemLineOffset: 0,
       expandedAIGroupIds: new Set<string>(),
       expandedAIGroupScrollOffsets: new Map(),
       expandedToolIds: new Set<string>(),
@@ -400,9 +404,9 @@ export const useTuiStore = create<TuiState>((set, get) => ({
       showContextPanel: savedShowContext,
     };
     if (sessionIsOngoing && wasNearBottom && newItemCount > prevItemCount) {
-      set({ chatScrollOffset: Math.max(0, newItemCount - 1), ...restoreState });
+      set({ chatScrollOffset: Math.max(0, newItemCount - 1), chatItemLineOffset: 0, ...restoreState });
     } else {
-      set({ chatScrollOffset: savedOffset, ...restoreState });
+      set({ chatScrollOffset: savedOffset, chatItemLineOffset: 0, ...restoreState });
     }
   },
 
@@ -423,10 +427,6 @@ export const useTuiStore = create<TuiState>((set, get) => ({
     }
   },
 
-  setFocusMode: (mode: FocusMode): void => {
-    set({ focusMode: mode });
-  },
-
   goBackToProjects: (): void => {
     set({
       focusMode: 'projects',
@@ -436,6 +436,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
       selectedSessionId: null,
       chatItems: [],
       chatScrollOffset: 0,
+      chatItemLineOffset: 0,
       expandedToolIds: new Set<string>(),
       expandedUserIds: new Set<string>(),
       expandedSystemIds: new Set<string>(),
@@ -464,6 +465,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
       selectedSessionId: null,
       chatItems: [],
       chatScrollOffset: 0,
+      chatItemLineOffset: 0,
       expandedAIGroupIds: new Set<string>(),
       expandedAIGroupScrollOffsets: new Map(),
       expandedToolIds: new Set<string>(),
@@ -510,6 +512,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
     const entry: SubagentStackEntry = {
       chatItems,
       chatScrollOffset,
+      chatItemLineOffset: get().chatItemLineOffset,
       expandedAIGroupIds: new Set(expandedAIGroupIds),
       expandedAIGroupScrollOffsets: new Map(expandedAIGroupScrollOffsets),
       expandedToolIds: new Set(expandedToolIds),
@@ -575,6 +578,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
       set({
         chatItems: enhancedItems,
         chatScrollOffset: 0,
+        chatItemLineOffset: 0,
         expandedAIGroupIds: new Set<string>(),
         expandedAIGroupScrollOffsets: new Map(),
         expandedToolIds: new Set<string>(),
@@ -613,6 +617,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
     set({
       chatItems: entry.chatItems,
       chatScrollOffset: entry.chatScrollOffset,
+      chatItemLineOffset: entry.chatItemLineOffset,
       expandedAIGroupIds: entry.expandedAIGroupIds,
       expandedAIGroupScrollOffsets: entry.expandedAIGroupScrollOffsets,
       expandedToolIds: entry.expandedToolIds,
@@ -809,6 +814,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
     // Auto-scroll to first match
     if (matches.length > 0) {
       newState.chatScrollOffset = matches[0].itemIndex;
+      newState.chatItemLineOffset = 0;
     }
 
     set(newState);
@@ -822,6 +828,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
       return {
         currentChatSearchIndex: next,
         chatScrollOffset: match.itemIndex,
+        chatItemLineOffset: 0,
       };
     });
   },
@@ -834,6 +841,7 @@ export const useTuiStore = create<TuiState>((set, get) => ({
       return {
         currentChatSearchIndex: prev,
         chatScrollOffset: match.itemIndex,
+        chatItemLineOffset: 0,
       };
     });
   },

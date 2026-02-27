@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Electron desktop app that visualizes Claude Code session execution. Reads raw JSONL session logs from `~/.claude/` and reconstructs them into a structured, searchable interface. Also runs as a standalone HTTP server (Docker/Node.js) without Electron.
+Electron desktop app that visualizes Claude Code session execution. Reads raw JSONL session logs from `~/.claude/` and reconstructs them into a structured, searchable interface. Also runs as a standalone HTTP server (Docker/Node.js) without Electron, and as a TUI (Terminal UI) via Ink.
 
 ## Tech Stack
 
@@ -33,6 +33,9 @@ Always use pnpm (not npm/yarn).
 | `pnpm fix` | `lint:fix` + `format` |
 | `pnpm check` | Full quality gate: `typecheck && lint && test && build` |
 | `pnpm quality` | `check` + `format:check` + `knip` (dead code detection) |
+| `pnpm tui` | Build and run TUI mode (Ink terminal UI) |
+| `pnpm tui:build` | Build TUI only (outputs to `dist-tui/`) |
+| `pnpm tui:start` | Run pre-built TUI |
 
 ## Path Aliases
 
@@ -40,14 +43,17 @@ Always use pnpm (not npm/yarn).
 - `@renderer/*` → `src/renderer/*`
 - `@shared/*` → `src/shared/*`
 - `@preload/*` → `src/preload/*`
+- `@tui/*` → `src/tui/*`
 
 ## Architecture
 
-### Dual-Mode Runtime
+### Three-Mode Runtime
 
 **Electron mode** (`src/main/index.ts`): Standard three-process Electron app — main (Node.js), preload (bridge), renderer (React/Chromium). Main process manages IPC, file watching, and SSH.
 
 **Standalone mode** (`src/main/standalone.ts`): Fastify HTTP server with SSE push events instead of IPC. No Electron. Used for Docker and remote deployments. Env vars: `HOST`, `PORT`, `CLAUDE_ROOT`, `CORS_ORIGIN`.
+
+**TUI mode** (`src/tui/index.tsx`): Terminal UI using Ink (React for CLI). Single Node.js process that directly calls `src/main/services/` without IPC or HTTP. Run with `pnpm tui`. ESLint boundary: `{ from: 'tui', allow: ['tui', 'main', 'shared', 'renderer'] }`. See `src/tui/CLAUDE.md` for details.
 
 The renderer auto-detects mode in `src/renderer/api/index.ts`: if `window.electronAPI` exists → Electron IPC; otherwise → `HttpAPIClient` (SSE + fetch). Both implement the same `ElectronAPI` interface from `@shared/types/api`. Renderer code should always use the `api` proxy, never `window.electronAPI` directly.
 

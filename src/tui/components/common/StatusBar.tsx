@@ -8,9 +8,9 @@ import { Box, Text } from 'ink';
 import type { FocusMode } from '@tui/store';
 
 const KEY_HINTS: Record<FocusMode, string> = {
-  projects: '↑↓ Navigate  Enter Select  q Quit',
-  sessions: '↑↓ Navigate  Enter Select  / Filter  Esc Back',
-  chat: '↑↓ Scroll  d/u Page  Enter Expand  / Search  n/N Match  c Context  r Refresh  Esc Back',
+  projects: '↑↓ Navigate  → Select  q Quit',
+  sessions: '↑↓ Navigate  → Select  ← Back  / Filter',
+  chat: '↑↓ Scroll  → Expand  ← Collapse/Back  d/u Page  / Search  c Context  r Refresh',
 };
 
 export const StatusBar = (): JSX.Element => {
