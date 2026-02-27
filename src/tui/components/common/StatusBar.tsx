@@ -9,8 +9,8 @@ import type { FocusMode } from '@tui/store';
 
 const KEY_HINTS: Record<FocusMode, string> = {
   projects: '↑↓ Navigate  Enter Select  q Quit',
-  sessions: '↑↓ Navigate  Enter Select  Esc Back',
-  chat: '↑↓ Scroll  d/u Page  Enter Expand  r Refresh  Esc Back',
+  sessions: '↑↓ Navigate  Enter Select  / Filter  Esc Back',
+  chat: '↑↓ Scroll  d/u Page  Enter Expand  / Search  n/N Match  c Context  r Refresh  Esc Back',
 };
 
 export const StatusBar = (): JSX.Element => {

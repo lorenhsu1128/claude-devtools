@@ -10,6 +10,7 @@ import { useFileWatcher } from '../hooks/useFileWatcher';
 import { useKeymap } from '../hooks/useKeymap';
 import { useTuiStore } from '../store';
 
+import { HelpOverlay } from './common/HelpOverlay';
 import { StatusBar } from './common/StatusBar';
 import { ChatView } from './ChatView';
 import { Sidebar } from './Sidebar';
@@ -33,6 +34,7 @@ export const App = (): JSX.Element => {
   const selectedProjectId = useTuiStore((s) => s.selectedProjectId);
   const projects = useTuiStore((s) => s.projects);
   const projectName = projects.find((p) => p.id === selectedProjectId)?.name;
+  const showHelp = useTuiStore((s) => s.showHelp);
 
   return (
     <Box flexDirection="column" height={termRows}>
@@ -42,11 +44,17 @@ export const App = (): JSX.Element => {
         {projectName ? <Text dimColor>[{projectName}]</Text> : null}
       </Box>
 
-      {/* Main content: sidebar + chat */}
-      <Box flexGrow={1}>
-        <Sidebar />
-        <ChatView />
-      </Box>
+      {/* Main content: sidebar + chat (or help overlay) */}
+      {showHelp ? (
+        <Box flexGrow={1}>
+          <HelpOverlay />
+        </Box>
+      ) : (
+        <Box flexGrow={1}>
+          <Sidebar />
+          <ChatView />
+        </Box>
+      )}
 
       {/* Status bar */}
       <StatusBar />

@@ -6,9 +6,10 @@
  */
 
 import { Box, Text, useStdout } from 'ink';
+import TextInput from 'ink-text-input';
 
 import { useTuiStore } from '../store';
-import { getNonEmptyCategories,groupByDate } from '../utils/dateGrouping';
+import { getNonEmptyCategories, groupByDate } from '../utils/dateGrouping';
 
 import { LoadingSpinner } from './common/LoadingSpinner';
 
@@ -28,6 +29,11 @@ export const Sidebar = (): JSX.Element => {
     sessions,
     selectedSessionIndex,
     sessionsLoading,
+    sessionFilterActive,
+    sessionFilter,
+    setSessionFilter,
+    deactivateSessionFilter,
+    navigateList,
   } = useTuiStore();
 
   const { stdout } = useStdout();
@@ -36,6 +42,20 @@ export const Sidebar = (): JSX.Element => {
 
   const isSidebarFocused = focusMode === 'projects' || focusMode === 'sessions';
   const showSessions = selectedProjectId !== null;
+
+  // Filter sessions when filter is active
+  const filteredSessions = sessionFilterActive && sessionFilter
+    ? sessions.filter((s) => (s.firstMessage ?? '').toLowerCase().includes(sessionFilter.toLowerCase()))
+    : sessions;
+
+  // Handle TextInput submit — select highlighted session
+  const handleFilterSubmit = (): void => {
+    const session = filteredSessions[selectedSessionIndex];
+    if (session) {
+      deactivateSessionFilter();
+      void useTuiStore.getState().selectSession(session.id);
+    }
+  };
 
   return (
     <Box
@@ -49,17 +69,35 @@ export const Sidebar = (): JSX.Element => {
         <Text bold color={isSidebarFocused ? 'cyan' : 'white'}>
           {showSessions ? 'Sessions' : 'Projects'}
         </Text>
+        {sessionFilterActive ? (
+          <Text dimColor> ({filteredSessions.length})</Text>
+        ) : null}
       </Box>
+
+      {/* Session filter input */}
+      {sessionFilterActive ? (
+        <Box paddingX={1}>
+          <Text color="cyan">/ </Text>
+          <TextInput
+            value={sessionFilter}
+            onChange={(val) => {
+              setSessionFilter(val);
+              navigateList('sessions', 0, filteredSessions.length);
+            }}
+            onSubmit={handleFilterSubmit}
+          />
+        </Box>
+      ) : null}
 
       {/* Content */}
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
         {showSessions ? (
           <SessionList
-            sessions={sessions}
+            sessions={filteredSessions}
             selectedIndex={selectedSessionIndex}
             loading={sessionsLoading}
             focused={focusMode === 'sessions'}
-            visibleRows={visibleRows}
+            visibleRows={sessionFilterActive ? visibleRows - 1 : visibleRows}
           />
         ) : (
           <ProjectList

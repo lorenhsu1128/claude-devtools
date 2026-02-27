@@ -18,6 +18,9 @@ import { formatDuration } from '@renderer/utils/formatters';
 import { formatTokensCompact } from '@shared/utils/tokenFormatting';
 import { Box, Text } from 'ink';
 
+import { useTuiStore } from '../../store';
+import { MarkdownText } from '../common/MarkdownText';
+
 import { ToolItem } from './ToolItem';
 
 import type {
@@ -121,6 +124,8 @@ type ExpandedEntry =
 // ── Display item renderer ──
 
 const DisplayItem = ({ item }: { item: AIGroupDisplayItem }): JSX.Element | null => {
+  const expandedToolIds = useTuiStore((s) => s.expandedToolIds);
+
   switch (item.type) {
     case 'thinking':
       return (
@@ -130,7 +135,7 @@ const DisplayItem = ({ item }: { item: AIGroupDisplayItem }): JSX.Element | null
       );
 
     case 'tool':
-      return <ToolItem tool={item.tool} />;
+      return <ToolItem tool={item.tool} expanded={expandedToolIds.has(item.tool.id)} />;
 
     case 'subagent': {
       const sa = item.subagent;
@@ -144,7 +149,7 @@ const DisplayItem = ({ item }: { item: AIGroupDisplayItem }): JSX.Element | null
           <Text dimColor>{'  '}⚙ </Text>
           <Text color="magenta">{typeLabel}</Text>
           <Text dimColor>
-            {desc} ({dur}){teamLabel}
+            {desc} ({dur}){teamLabel} ▸
           </Text>
         </Text>
       );
@@ -208,10 +213,12 @@ const LastOutputRenderer = ({
     case 'text':
       if (!output.text) return null;
       return (
-        <>
+        <Box flexDirection="column">
           <Text dimColor>{'  '}────</Text>
-          <Text wrap="wrap">{'  '}{truncate(output.text, 500)}</Text>
-        </>
+          <Box paddingLeft={1}>
+            <MarkdownText text={truncate(output.text, 2000)} />
+          </Box>
+        </Box>
       );
 
     case 'tool_result':

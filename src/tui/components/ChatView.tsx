@@ -9,14 +9,17 @@ import { useMemo } from 'react';
 
 import { formatDuration } from '@renderer/utils/formatters';
 import { formatTokensCompact } from '@shared/utils/tokenFormatting';
+import { truncateLines } from '@tui/utils/textWrap';
 import { Box, Text } from 'ink';
+import TextInput from 'ink-text-input';
 
 import { useScrollWindow } from '../hooks/useScrollWindow';
 import { useTuiStore } from '../store';
 
 import { AIItem } from './chat/AIItem';
 import { CompactItem } from './chat/CompactItem';
-import { SystemItem } from './chat/SystemItem';
+import { ContextPanel } from './chat/ContextPanel';
+import { MAX_OUTPUT_LINES, SystemItem } from './chat/SystemItem';
 import { UserItem } from './chat/UserItem';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { TokenBar } from './common/TokenBar';
@@ -55,9 +58,21 @@ export const ChatView = (): JSX.Element => {
     chatError,
     expandedAIGroupIds,
     expandedAIGroupScrollOffsets,
+    expandedUserIds,
+    expandedSystemIds,
+    expandedSystemScrollOffsets,
     selectedSessionId,
     sessions,
     sessionIsOngoing,
+    showContextPanel,
+    subagentStack,
+    subagentLabel,
+    chatSearchActive,
+    chatSearchQuery,
+    chatSearchMatches,
+    currentChatSearchIndex,
+    setChatSearchQuery,
+    deactivateChatSearch,
   } = useTuiStore();
 
   const isFocused = focusMode === 'chat';
@@ -105,12 +120,23 @@ export const ChatView = (): JSX.Element => {
       borderStyle="single"
       borderColor={isFocused ? 'cyan' : 'gray'}
     >
-      {/* Header */}
+      {/* Header with breadcrumbs */}
       <Box flexDirection="column" paddingX={1}>
         <Box>
-          <Text bold color={isFocused ? 'cyan' : 'white'}>
-            Session: <Text wrap="truncate">{sessionLabel}</Text>
-          </Text>
+          {subagentStack.length > 0 ? (
+            <Text bold wrap="truncate">
+              <Text dimColor>{subagentStack[0].label}</Text>
+              {subagentStack.slice(1).map((entry, i) => (
+                <Text key={i} dimColor> {'>'} {entry.label}</Text>
+              ))}
+              <Text dimColor> {'>'} </Text>
+              <Text color={isFocused ? 'cyan' : 'magenta'}>{subagentLabel}</Text>
+            </Text>
+          ) : (
+            <Text bold color={isFocused ? 'cyan' : 'white'}>
+              Session: <Text wrap="truncate">{sessionLabel}</Text>
+            </Text>
+          )}
           <Text dimColor>
             {' '}
             ({chatScrollOffset + 1}/{totalItems})
@@ -127,35 +153,105 @@ export const ChatView = (): JSX.Element => {
         <TokenBar current={stats.totalTokens} max={DEFAULT_CONTEXT_WINDOW} width={16} />
       </Box>
 
+      {/* Chat search bar */}
+      {chatSearchActive ? (
+        <Box paddingX={1}>
+          <Text color="cyan">/ </Text>
+          <TextInput
+            value={chatSearchQuery}
+            onChange={setChatSearchQuery}
+            onSubmit={() => {
+              if (chatSearchMatches.length > 0) deactivateChatSearch();
+            }}
+          />
+          {chatSearchMatches.length > 0 ? (
+            <Text dimColor>
+              {' '}{currentChatSearchIndex + 1}/{chatSearchMatches.length}
+            </Text>
+          ) : chatSearchQuery ? (
+            <Text dimColor color="red"> no matches</Text>
+          ) : null}
+        </Box>
+      ) : chatSearchMatches.length > 0 && !chatSearchActive ? (
+        <Box paddingX={1}>
+          <Text dimColor>
+            search: {currentChatSearchIndex + 1}/{chatSearchMatches.length} matches
+          </Text>
+        </Box>
+      ) : null}
+
+      {/* Context panel */}
+      {showContextPanel && isFocused ? (
+        (() => {
+          const focusedItem = chatItems[chatScrollOffset];
+          if (focusedItem?.type === 'ai') {
+            // Compute 1-based turn number from AI groups
+            let turn = 0;
+            for (let i = 0; i <= chatScrollOffset && i < chatItems.length; i++) {
+              if (chatItems[i].type === 'ai') turn++;
+            }
+            return <ContextPanel aiGroupId={focusedItem.group.id} turnNumber={turn} />;
+          }
+          return (
+            <Box paddingX={1}>
+              <Text dimColor>Move to an AI turn to view context</Text>
+            </Box>
+          );
+        })()
+      ) : null}
+
       {/* Chat items */}
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
         {visibleItems.map((item, i) => {
+          const actualIndex = window.startIndex + i;
           const isFocusedItem = i === 0 && isFocused;
-          const isExpanded = item.type === 'ai' && expandedAIGroupIds.has(item.group.id);
-          // AI items: ▸/▾ (expandable), others: › (non-expandable)
+          const isAIExpanded = item.type === 'ai' && expandedAIGroupIds.has(item.group.id);
+          const isUserExpanded = item.type === 'user' && expandedUserIds.has(item.group.id);
+          const isSystemExpanded = item.type === 'system' && expandedSystemIds.has(item.group.id);
+          // Check if user item has truncated content (matching UserItem's MAX_TEXT_LINES = 15)
+          const isUserExpandable = item.type === 'user'
+            && truncateLines(item.group.content.text ?? item.group.content.rawText ?? '', 15).remaining > 0;
+          const isSystemExpandable = item.type === 'system'
+            && truncateLines(item.group.commandOutput ?? '', MAX_OUTPUT_LINES).remaining > 0;
+          // Check if current item has a search match
+          const hasSearchMatch = chatSearchMatches.length > 0
+            && currentChatSearchIndex >= 0
+            && chatSearchMatches[currentChatSearchIndex]?.itemIndex === actualIndex;
+          // AI/expandable items: ▸/▾ (expandable), others: › (non-expandable)
           const cursor = isFocusedItem
             ? item.type === 'ai'
-              ? isExpanded ? '▾ ' : '▸ '
-              : '› '
-            : '  ';
+              ? isAIExpanded ? '▾ ' : '▸ '
+              : isUserExpandable
+                ? isUserExpanded ? '▾ ' : '▸ '
+                : isSystemExpandable
+                  ? isSystemExpanded ? '▾ ' : '▸ '
+                  : '› '
+            : hasSearchMatch ? '* ' : '  ';
 
           let itemNode: JSX.Element | null;
           switch (item.type) {
             case 'user':
-              itemNode = <UserItem group={item.group} />;
+              itemNode = <UserItem group={item.group} expanded={isUserExpanded} />;
               break;
             case 'ai':
               itemNode = (
                 <AIItem
                   group={item.group}
-                  expanded={isExpanded}
-                  displayOffset={isExpanded ? (expandedAIGroupScrollOffsets.get(item.group.id) ?? 0) : 0}
+                  expanded={isAIExpanded}
+                  displayOffset={isAIExpanded ? (expandedAIGroupScrollOffsets.get(item.group.id) ?? 0) : 0}
                   maxDisplayLines={window.availableRows - 2}
                 />
               );
               break;
             case 'system':
-              itemNode = <SystemItem group={item.group} />;
+              itemNode = (
+                <SystemItem
+                  group={item.group}
+                  expanded={isSystemExpanded}
+                  lineOffset={isSystemExpanded ? (expandedSystemScrollOffsets.get(item.group.id) ?? 0) : 0}
+                  maxLines={window.availableRows - 2}
+                />
+              );
               break;
             case 'compact':
               itemNode = <CompactItem group={item.group} />;
@@ -166,7 +262,7 @@ export const ChatView = (): JSX.Element => {
 
           return (
             <Box key={item.group.id} flexDirection="row">
-              <Text color={isFocusedItem ? 'cyan' : undefined}>{cursor}</Text>
+              <Text color={isFocusedItem ? 'cyan' : hasSearchMatch ? 'yellow' : undefined}>{cursor}</Text>
               <Box flexDirection="column" flexGrow={1}>
                 {itemNode}
               </Box>
@@ -183,7 +279,7 @@ export const ChatView = (): JSX.Element => {
           </Box>
           <Box paddingX={1}>
             <Text dimColor wrap="truncate">
-              j/k:nav Enter:expand d/u:page r:refresh Esc:back
+              j/k:nav Enter:expand d/u:page c:context r:refresh Esc:back
             </Text>
           </Box>
         </Box>

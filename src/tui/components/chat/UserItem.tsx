@@ -10,23 +10,28 @@
 import { truncateLines } from '@tui/utils/textWrap';
 import { Box, Text } from 'ink';
 
+import { MarkdownText } from '../common/MarkdownText';
+
 import type { UserGroup } from '@renderer/types/groups';
 
-const MAX_TEXT_LINES = 15;
+export const MAX_TEXT_LINES = 15;
 
 interface UserItemProps {
   group: UserGroup;
+  expanded?: boolean;
 }
 
-export const UserItem = ({ group }: UserItemProps): JSX.Element => {
+export const UserItem = ({ group, expanded = false }: UserItemProps): JSX.Element => {
   const time = new Date(group.timestamp).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
   const rawText = group.content.text ?? group.content.rawText ?? '';
-  const { text, remaining } = truncateLines(rawText, MAX_TEXT_LINES);
+  const { text: truncatedText, remaining } = truncateLines(rawText, MAX_TEXT_LINES);
 
+  const displayText = expanded ? rawText : truncatedText;
   const fileRefs = group.content.fileReferences;
+  const maxFileRefs = expanded ? fileRefs.length : 5;
   const imageCount = group.content.images.length;
 
   return (
@@ -34,18 +39,18 @@ export const UserItem = ({ group }: UserItemProps): JSX.Element => {
       <Text color="green" bold>
         [User] <Text dimColor>{time}</Text>
       </Text>
-      <Text wrap="wrap">{text}</Text>
-      {remaining > 0 ? (
+      <MarkdownText text={displayText} />
+      {!expanded && remaining > 0 ? (
         <Text dimColor>  ...{remaining} more lines</Text>
       ) : null}
       {fileRefs.length > 0 ? (
         <Text dimColor>
           {'  '}📎{' '}
           {fileRefs
-            .slice(0, 5)
+            .slice(0, maxFileRefs)
             .map((f) => f.path)
             .join(', ')}
-          {fileRefs.length > 5 ? ` +${fileRefs.length - 5} more` : ''}
+          {fileRefs.length > maxFileRefs ? ` +${fileRefs.length - maxFileRefs} more` : ''}
         </Text>
       ) : null}
       {imageCount > 0 ? (

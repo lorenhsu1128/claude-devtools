@@ -19,20 +19,46 @@ const CHROME_ROWS = 11;
  * Estimate how many terminal rows a ChatItem will occupy,
  * accounting for expansion state.
  */
+/** Max lines before truncation (must match UserItem.MAX_TEXT_LINES) */
+const USER_MAX_TEXT_LINES = 15;
+
+/** Max output lines for system items (must match SystemItem.MAX_OUTPUT_LINES) */
+const SYSTEM_MAX_OUTPUT_LINES = 8;
+
 function estimateItemRows(
   item: ChatItem,
   columns: number,
   expandedIds: Set<string>,
   scrollOffsets: Map<string, number>,
   availableRows: number,
+  expandedToolIds: Set<string>,
+  expandedUserIds: Set<string>,
+  expandedSystemIds: Set<string>,
+  systemScrollOffsets: Map<string, number>,
 ): number {
   const usable = Math.max(columns - 4, 20); // padding + borders
 
   switch (item.type) {
     case 'user': {
       const text = item.group.content.text ?? item.group.content.rawText ?? '';
-      const textRows = Math.max(1, Math.ceil(text.length / usable));
-      return 1 + textRows + 1; // header + text + margin
+      const lines = text.split('\n');
+      const isExpanded = expandedUserIds.has(item.group.id);
+      if (isExpanded) {
+        // Full text — estimate rows from all lines
+        let rows = 0;
+        for (const line of lines) {
+          rows += Math.max(1, Math.ceil((line.length || 1) / usable));
+        }
+        return 1 + rows + 1; // header + text + margin
+      }
+      // Collapsed — cap at MAX_TEXT_LINES
+      const cappedLines = lines.slice(0, USER_MAX_TEXT_LINES);
+      let rows = 0;
+      for (const line of cappedLines) {
+        rows += Math.max(1, Math.ceil((line.length || 1) / usable));
+      }
+      const truncatedIndicator = lines.length > USER_MAX_TEXT_LINES ? 1 : 0;
+      return 1 + rows + truncatedIndicator + 1; // header + text + truncation hint + margin
     }
     case 'ai': {
       if (!expandedIds.has(item.group.id)) {
@@ -40,7 +66,17 @@ function estimateItemRows(
       }
       // Expanded: account for visible display items
       const enhanced = item.group as EnhancedAIGroup;
-      const totalEntries = (enhanced.displayItems?.length ?? 0) + (enhanced.lastOutput ? 2 : 0);
+      let totalEntries = (enhanced.displayItems?.length ?? 0) + (enhanced.lastOutput ? 2 : 0);
+      // Add extra rows for expanded tools
+      if (enhanced.displayItems) {
+        for (const di of enhanced.displayItems) {
+          if (di.type === 'tool' && expandedToolIds.has(di.tool.id)) {
+            const preview = di.tool.outputPreview ?? '';
+            const extraRows = Math.ceil(Math.min(preview.length, 300) / usable) + 1;
+            totalEntries += extraRows;
+          }
+        }
+      }
       const offset = scrollOffsets.get(item.group.id) ?? 0;
       const maxVisible = Math.max(availableRows - 2, 1);
       const visibleEntries = Math.min(totalEntries - offset, maxVisible);
@@ -50,8 +86,29 @@ function estimateItemRows(
     }
     case 'system': {
       const output = item.group.commandOutput ?? '';
-      const outputRows = Math.max(1, Math.ceil(Math.min(output.length, 200) / usable));
-      return outputRows + 1;
+      const lines = output.split('\n');
+      const isExpanded = expandedSystemIds.has(item.group.id);
+      if (isExpanded) {
+        // Windowed: show at most (availableRows - 2) lines from the current offset
+        const offset = systemScrollOffsets.get(item.group.id) ?? 0;
+        const maxVisible = Math.max(availableRows - 2, 1);
+        const visibleLines = lines.slice(offset, offset + maxVisible);
+        let rows = 0;
+        for (const line of visibleLines) {
+          rows += Math.max(1, Math.ceil((line.length || 1) / usable));
+        }
+        const hiddenAbove = offset > 0 ? 1 : 0;
+        const hiddenBelow = lines.length - offset - maxVisible > 0 ? 1 : 0;
+        return 1 + hiddenAbove + rows + hiddenBelow + 1; // header + indicators + visible lines + margin
+      }
+      // Collapsed — cap at SYSTEM_MAX_OUTPUT_LINES
+      const cappedLines = lines.slice(0, SYSTEM_MAX_OUTPUT_LINES);
+      let rows = 0;
+      for (const line of cappedLines) {
+        rows += Math.max(1, Math.ceil((line.length || 1) / usable));
+      }
+      const truncatedIndicator = lines.length > SYSTEM_MAX_OUTPUT_LINES ? 1 : 0;
+      return 1 + rows + truncatedIndicator + 1; // header + output + truncation hint + margin
     }
     case 'compact':
       return 2; // label + margin
@@ -82,7 +139,7 @@ export function useScrollWindow(
   const termCols = stdout?.columns ?? 80;
   const availableRows = Math.max(termRows - CHROME_ROWS, 5);
 
-  const { expandedAIGroupIds, expandedAIGroupScrollOffsets } = useTuiStore();
+  const { expandedAIGroupIds, expandedAIGroupScrollOffsets, expandedToolIds, expandedUserIds, expandedSystemIds, expandedSystemScrollOffsets } = useTuiStore();
 
   let rowsBudget = availableRows;
   let count = 0;
@@ -94,6 +151,10 @@ export function useScrollWindow(
       expandedAIGroupIds,
       expandedAIGroupScrollOffsets,
       availableRows,
+      expandedToolIds,
+      expandedUserIds,
+      expandedSystemIds,
+      expandedSystemScrollOffsets,
     );
     rowsBudget -= itemRows;
     count++;
