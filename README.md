@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <strong><code>Terminal tells you nothing. This shows you everything.</code></strong>
+  <strong><code>終端機什麼都沒告訴你。這裡讓你看清楚一切。</code></strong>
   <br />
-  A desktop app that reconstructs exactly what Claude Code did — every file path, every tool call, every token — from the raw session logs already on your machine.
+  一個桌面應用程式，從你機器上已有的原始 session 紀錄，精確還原 Claude Code 做了什麼——每個檔案路徑、每個工具呼叫、每個 token。
 </p>
 
 
@@ -33,176 +33,164 @@
     <img src="https://img.shields.io/badge/Website-claude--dev.tools-171717?logo=googlechrome&logoColor=white&style=flat" alt="Website" height="30" />
   </a>&nbsp;&nbsp;
   <a href="https://github.com/matt1398/claude-devtools/releases/latest">
-    <img src="https://img.shields.io/badge/macOS-Download-black?logo=apple&logoColor=white&style=flat" alt="Download for macOS" height="30" />
+    <img src="https://img.shields.io/badge/macOS-下載-black?logo=apple&logoColor=white&style=flat" alt="Download for macOS" height="30" />
   </a>&nbsp;&nbsp;
   <a href="https://github.com/matt1398/claude-devtools/releases/latest">
-    <img src="https://img.shields.io/badge/Linux-Download-FCC624?logo=linux&logoColor=black&style=flat" alt="Download for Linux" height="30" />
+    <img src="https://img.shields.io/badge/Linux-下載-FCC624?logo=linux&logoColor=black&style=flat" alt="Download for Linux" height="30" />
   </a>&nbsp;&nbsp;
   <a href="https://github.com/matt1398/claude-devtools/releases/latest">
-    <img src="https://img.shields.io/badge/Windows-Download-0078D4?logo=windows&logoColor=white&style=flat" alt="Download for Windows" height="30" />
+    <img src="https://img.shields.io/badge/Windows-下載-0078D4?logo=windows&logoColor=white&style=flat" alt="Download for Windows" height="30" />
   </a>&nbsp;&nbsp;
-  <a href="#docker--standalone-deployment">
-    <img src="https://img.shields.io/badge/Docker-Deploy-2496ED?logo=docker&logoColor=white&style=flat" alt="Deploy with Docker" height="30" />
+  <a href="#docker--standalone-部署">
+    <img src="https://img.shields.io/badge/Docker-部署-2496ED?logo=docker&logoColor=white&style=flat" alt="Deploy with Docker" height="30" />
   </a>&nbsp;&nbsp;
-  <a href="#installation">
-    <img src="https://img.shields.io/badge/Homebrew-Install-FBB040?logo=homebrew&logoColor=white&style=flat" alt="Install with Homebrew" height="30" />
+  <a href="#安裝方式">
+    <img src="https://img.shields.io/badge/Homebrew-安裝-FBB040?logo=homebrew&logoColor=white&style=flat" alt="Install with Homebrew" height="30" />
   </a>
 </p>
 
 <p align="center">
-  <sub>100% free, open source. No API keys. No configuration. Just download, open, and see everything Claude Code did.</sub>
+  <sub>100% 免費開源。無需 API 金鑰。無需設定。下載後直接開啟，即可看清 Claude Code 做了什麼。</sub>
 </p>
 
 <br />
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/2b420b2c-c4af-4d10-a679-c83269f8ee99">
-    Your browser does not support the video tag.
+    您的瀏覽器不支援影片標籤。
   </video>
 </p>
 
 ---
 
-## Installation
+## 安裝方式
 
-### Homebrew (macOS)
+### Homebrew（macOS）
 
 ```bash
 brew install --cask claude-devtools
 ```
 
-### Direct Download
+### 直接下載
 
-| Platform | Download | Notes |
-|----------|----------|-------|
-| **macOS** (Apple Silicon) | [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest) | Download the `arm64` asset. Drag to Applications. On first launch: right-click → Open |
-| **macOS** (Intel) | [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest) | Download the `x64` asset. Drag to Applications. On first launch: right-click → Open |
-| **Linux** | [`.AppImage` / `.deb` / `.rpm` / `.pacman`](https://github.com/matt1398/claude-devtools/releases/latest) | Choose the package format for your distro (portable AppImage or native package manager format). |
-| **Windows** | [`.exe`](https://github.com/matt1398/claude-devtools/releases/latest) | Standard installer. May trigger SmartScreen — click "More info" → "Run anyway" |
-| **Docker** | `docker compose up` | Open `http://localhost:3456`. See [Docker / Standalone Deployment](#docker--standalone-deployment) for details. |
+| 平台 | 下載 | 說明 |
+|------|------|------|
+| **macOS**（Apple Silicon）| [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest) | 下載 `arm64` 版本，拖入「應用程式」資料夾。首次啟動：右鍵 → 開啟 |
+| **macOS**（Intel）| [`.dmg`](https://github.com/matt1398/claude-devtools/releases/latest) | 下載 `x64` 版本，拖入「應用程式」資料夾。首次啟動：右鍵 → 開啟 |
+| **Linux** | [`.AppImage` / `.deb` / `.rpm` / `.pacman`](https://github.com/matt1398/claude-devtools/releases/latest) | 依您的發行版選擇套件格式（可攜式 AppImage 或原生套件管理器格式）|
+| **Windows** | [`.exe`](https://github.com/matt1398/claude-devtools/releases/latest) | 標準安裝程式。可能觸發 SmartScreen——點選「更多資訊」→「仍要執行」|
+| **Docker** | `docker compose up` | 開啟 `http://localhost:3456`。詳見 [Docker / Standalone 部署](#docker--standalone-部署) |
 
-The app reads session logs from `~/.claude/` — the data is already on your machine. No setup, no API keys, no login.
-
----
-
-## Why This Exists
-
-### Claude Code stopped telling you what it's doing.
-
-Recent Claude Code updates replaced detailed tool output with opaque summaries. `Read 3 files`. `Searched for 1 pattern`. `Edited 2 files`. No paths, no content, no line numbers. The context usage indicator became a three-segment progress bar with no breakdown. To get the details back, the only option is `--verbose` — which dumps raw JSON, internal system prompts, and thousands of lines of noise into your terminal.
-
-**There is no middle ground in the CLI.** You either see too little or too much.
-
-claude-devtools restores the information that was taken away — structured, searchable, and without a single modification to Claude Code itself. It reads the raw session logs from `~/.claude/` and reconstructs the full execution trace: every file path that was read, every regex that was searched, every diff that was applied, every token that was consumed — organized into a visual interface you can actually reason about.
-
-### The wrapper problem.
-
-There are many GUI wrappers for Claude Code — Conductor, Craft Agents, Vibe Kanban, 1Code, ccswitch, and others. I tried them all. None of them solved the actual problem:
-
-**They wrap Claude Code.** They inject their own prompts, add their own abstractions, and change how Claude behaves. If you love the terminal — and I do — you don't want that. You want Claude Code exactly as it is.
-
-**They only show their own sessions.** Run something in the terminal? It doesn't exist in their UI. You can only see what was executed through *their* tool. The terminal and the GUI are two separate worlds.
-
-**You can't debug what went wrong.** A session failed — but why? The context filled up too fast — but what consumed it? A subagent spawned 5 child agents — but what did they do? Even in the terminal, scrolling back through a long session to reconstruct what happened is nearly impossible.
-
-**You can't monitor what matters.** Want to know when Claude reads `.env`? When a single tool call exceeds 4K tokens of context? When a teammate sends a shutdown request? You'd have to wire up hooks manually, every time, for every project.
-
-**claude-devtools takes a different approach.** It doesn't wrap or modify Claude Code at all. It reads the session logs that already exist on your machine (`~/.claude/`) and turns them into a rich, interactive interface — regardless of whether the session ran in the terminal, in an IDE, or through another tool.
-
-> Zero configuration. No API keys. Works with every session you've ever run.
+應用程式從 `~/.claude/` 讀取 session 紀錄——資料已在您的機器上。無需設定、無需 API 金鑰、無需登入。
 
 ---
 
-## Key Features
+## 為什麼需要這個工具
 
-### :mag: Visible Context Reconstruction
+### Claude Code 不再告訴你它在做什麼。
+
+近期 Claude Code 的更新將詳細的工具輸出替換成了模糊的摘要：`Read 3 files`、`Searched for 1 pattern`、`Edited 2 files`——沒有路徑、沒有內容、沒有行號。Context 使用指示器變成了一個沒有細項的三段式進度條。想要看回詳細資訊，唯一的選項是 `--verbose`——但這會把原始 JSON、內部系統提示和數千行雜訊全部傾倒進你的終端機。
+
+**CLI 沒有中間地帶。** 要麼看太少，要麼看太多。
+
+claude-devtools 還原了被拿走的資訊——結構化、可搜尋，而且完全不修改 Claude Code 本身。它讀取 `~/.claude/` 裡的原始 session 紀錄，重建完整的執行軌跡：每個被讀取的檔案路徑、每個被搜尋的正規表示式、每個被套用的 diff、每個被消耗的 token——整理成一個你真正能夠思考的視覺介面。
+
+### 包裝器問題。
+
+市面上有很多 Claude Code 的 GUI 包裝器——Conductor、Craft Agents、Vibe Kanban、1Code、ccswitch 等等。我全都試過了，沒有一個解決真正的問題：
+
+**它們包裝了 Claude Code。** 它們注入自己的提示、添加自己的抽象層，並改變 Claude 的行為方式。如果你熱愛終端機——我確實如此——你不會想要這樣。你想要的是原汁原味的 Claude Code。
+
+**它們只顯示自己的 session。** 在終端機裡執行了什麼？在它們的介面裡根本不存在。你只能看到透過*它們的*工具執行的內容。終端機和 GUI 是兩個完全不同的世界。
+
+**你無法除錯出錯的地方。** Session 失敗了——但為什麼？Context 填滿太快——但是什麼在消耗它？一個 subagent 生出了 5 個子代理——但它們做了什麼？即使在終端機裡，翻回一個漫長 session 的歷史來重建發生的事情也幾乎是不可能的。
+
+**你無法監控重要的事件。** 想知道 Claude 何時讀取了 `.env`？一個工具呼叫什麼時候超過了 4K tokens 的 context？隊友何時發送了關閉請求？你必須每次、針對每個專案手動設置 hooks。
+
+**claude-devtools 採取了不同的做法。** 它完全不包裝或修改 Claude Code。它讀取你機器上已有的 session 紀錄（`~/.claude/`），並將其轉化為豐富的互動介面——無論 session 是在終端機、IDE 還是其他工具中執行的。
+
+> 零設定。無需 API 金鑰。適用於你執行過的每一個 session。
+
+---
+
+## 主要功能
+
+### :mag: 可見 Context 重建
 
 <img width="100%" alt="context" src="https://github.com/user-attachments/assets/9ff4a5a7-bcf6-47fb-8ca5-d4021540804b" />
 
-Claude Code doesn't expose what's actually in the context window. claude-devtools reverse-engineers it.
+Claude Code 不會揭露 context 視窗中實際包含什麼。claude-devtools 對其進行逆向工程。
 
-The engine walks each turn of the session and reconstructs the full set of context injections — **CLAUDE.md files** (broken down by global, project, and directory-level), **skill activations**, **@-mentioned files**, **tool call inputs and outputs**, **extended thinking**, **team coordination overhead**, and **user prompt text**.
+引擎逐一走過 session 的每個回合，重建完整的 context 注入集合——**CLAUDE.md 檔案**（細分為全域、專案和目錄層級）、**skill 啟動**、**@-提及的檔案**、**工具呼叫的輸入和輸出**、**延伸思考**、**團隊協調開銷**以及**使用者提示文字**。
 
-The result is a per-turn breakdown of estimated token attribution across 7 categories, surfaced in three places: a **Context Badge** on each assistant response, a **Token Usage popover** with percentage breakdowns, and a dedicated **Session Context Panel**.
+結果是跨 7 個類別的逐回合 token 歸因估算，呈現在三個地方：每個助理回應上的 **Context 徽章**、帶有百分比細項的 **Token 使用量彈出視窗**，以及專屬的 **Session Context 面板**。
 
-### :chart_with_downwards_trend: Compaction Visualization
+### :chart_with_downwards_trend: 壓縮視覺化
 
 <video src="https://github.com/user-attachments/assets/25281f09-05ed-4f81-97bc-7b1754b08b06" controls="controls" muted="muted" style="max-width: 100%;"></video>
 
-**See the moment your context hits the limit.**
+**看見你的 context 觸及上限的那一刻。**
 
-When Claude Code hits its context limit, it silently compresses your conversation and continues. Most tools don't even notice this happened. 
+當 Claude Code 達到 context 上限時，它會悄悄壓縮你的對話並繼續。大多數工具甚至不會注意到這件事發生了。
 
-claude-devtools detects these compaction boundaries, measures the token delta before and after, and visualizes how your context fills, compresses, and refills over the course of a session. You can see exactly what was in the window at any point, and how the composition shifted after each compaction event.
+claude-devtools 偵測這些壓縮邊界，測量前後的 token 差異，並視覺化你的 context 在整個 session 過程中如何填充、壓縮和再次填充。你可以精確看到任何時間點視窗中有什麼，以及每次壓縮事件後組成如何變化。
 
-
-### :bell: Custom Notification Triggers
+### :bell: 自訂通知觸發器
 
 <video src="https://github.com/user-attachments/assets/3b07b3b4-57af-49ed-9539-be7c56a244f5" controls="controls" muted="muted" style="max-width: 100%;"></video>
 
-Define rules for when you want to receive **system notifications**. Match on regex patterns, assign colors, and filter your inbox by trigger.
+定義你希望在何時收到**系統通知**的規則。使用 regex 模式比對、指定顏色，並依觸發器篩選通知匣。
 
-- **Built-in defaults**: `.env File Access Alert`, `Tool Result Error` (`is_error: true`), and `High Token Usage` (default: 8,000 total tokens).
-- **Custom matching**: use regex against specific fields like `file_path`, `command`, `prompt`, `content`, `thinking`, or `text`.
-- **Sensitive-file monitoring**: create alerts for `.env`, `secrets`, payment/billing/stripe paths, or any project-specific pattern.
-- **Noise control**: choose input/output/total token thresholds, add ignore patterns, and scope triggers to selected repositories.
+- **內建預設**：`.env 檔案存取警告`、`工具結果錯誤`（`is_error: true`）以及`高 Token 使用量`（預設：8,000 總 tokens）。
+- **自訂比對**：針對特定欄位使用 regex，例如 `file_path`、`command`、`prompt`、`content`、`thinking` 或 `text`。
+- **敏感檔案監控**：為 `.env`、`secrets`、付款/帳單/stripe 路徑或任何專案特定模式建立警告。
+- **雜訊控制**：選擇輸入/輸出/總計 token 閾值、新增忽略模式，並將觸發器範圍限定於選定的儲存庫。
 
+### :hammer_and_wrench: 豐富的工具呼叫檢視器
 
-### :hammer_and_wrench: Rich Tool Call Inspector
+每個工具呼叫都與其結果配對，顯示在可展開的卡片中。專屬檢視器以原生方式渲染每個工具：
+- **Read** 呼叫顯示帶有行號的語法高亮程式碼
+- **Edit** 呼叫顯示帶有新增/刪除高亮的行內 diff
+- **Bash** 呼叫顯示指令輸出
+- **Subagent** 呼叫顯示完整的執行樹，可就地展開
 
-Every tool call is paired with its result in an expandable card. Specialized viewers render each tool natively:
-- **Read** calls show syntax-highlighted code with line numbers
-- **Edit** calls show inline diffs with added/removed highlighting
-- **Bash** calls show command output
-- **Subagent** calls show the full execution tree, expandable in-place
+### :busts_in_silhouette: 團隊與 Subagent 視覺化
 
+Claude Code 現在透過 Task 工具生成 subagent，並透過 `TeamCreate`、`SendMessage` 和 `TaskUpdate` 協調整個團隊。在終端機裡，這些全都會崩潰成難以閱讀的資料流。claude-devtools 將其理清。
 
-### :busts_in_silhouette: Team & Subagent Visualization
+- **Subagent sessions** 從 Task 工具呼叫中解析出來，渲染為可展開的行內卡片——每個都有自己的工具軌跡、token 指標、持續時間和成本。巢狀 subagent（代理生成代理）渲染為遞迴樹狀結構。
+- **隊友訊息**——透過帶有顏色和摘要後設資料的 `SendMessage` 發送——被偵測並渲染為獨特的彩色卡片，與一般使用者訊息分開。每個隊友以名稱和指定顏色識別。
+- **團隊生命週期**完全可見：`TeamCreate` 初始化、`TaskCreate`/`TaskUpdate` 協調、`SendMessage` 直接訊息和廣播、關閉請求和回應，以及 `TeamDelete` 拆除。
+- **Session 摘要**將不同隊友數量與 subagent 數量分開顯示，讓你一眼就能看出有多少代理參與以及工作如何分配。
 
-Claude Code now spawns subagents via the Task tool and coordinates entire teams via `TeamCreate`, `SendMessage`, and `TaskUpdate`. In the terminal, all of this collapses into an unreadable stream. claude-devtools untangles it.
+### :zap: 指令面板與跨 Session 搜尋
 
-- **Subagent sessions** are resolved from Task tool calls and rendered as expandable inline cards — each with its own tool trace, token metrics, duration, and cost. Nested subagents (agents spawning agents) render as a recursive tree.
-- **Teammate messages** — sent via `SendMessage` with color and summary metadata — are detected and rendered as distinct color-coded cards, separated from regular user messages. Each teammate is identified by name and assigned color.
-- **Team lifecycle** is fully visible: `TeamCreate` initialization, `TaskCreate`/`TaskUpdate` coordination, `SendMessage` direct messages and broadcasts, shutdown requests and responses, and `TeamDelete` teardown.
-- **Session summary** shows distinct teammate count separately from subagent count, so you can tell at a glance how many agents participated and how work was distributed.
+按 **Cmd+K** 開啟 Spotlight 風格的指令面板。跨專案的所有 session 進行搜尋——結果顯示帶有高亮關鍵字的上下文片段。直接導覽至精確的訊息。
 
-### :zap: Command Palette & Cross-Session Search
+### :globe_with_meridians: SSH 遠端 Session
 
-Hit **Cmd+K** for a Spotlight-style command palette. Search across all sessions in a project — results show context snippets with highlighted keywords. Navigate directly to the exact message.
+透過 SSH 連接到任何遠端機器，並在那裡檢視正在執行的 Claude Code session——相同的介面，無任何妥協。
 
-### :globe_with_meridians: SSH Remote Sessions
+claude-devtools 解析你的 `~/.ssh/config` 取得主機別名，支援代理轉發、私鑰和密碼驗證，然後開啟 SFTP 通道從遠端 `~/.claude/` 目錄串流 session 紀錄。每個 SSH 主機都有自己獨立的服務 context，具有獨立的快取、檔案監聽器和解析器。在本機和遠端工作區之間切換是即時的——應用程式在切換前將你的當前狀態快照至 IndexedDB，並在你返回時還原，包括所有分頁。
 
-Connect to any remote machine over SSH and inspect Claude Code sessions running there — same interface, no compromise.
+### :bar_chart: 多窗格佈局
 
-claude-devtools parses your `~/.ssh/config` for host aliases, supports agent forwarding, private keys, and password auth, then opens an SFTP channel to stream session logs from the remote `~/.claude/` directory. Each SSH host gets its own isolated service context with independent caches, file watchers, and parsers. Switching between local and remote workspaces is instant — the app snapshots your current state to IndexedDB before the switch and restores it when you return, tabs and all.
-
-### :bar_chart: Multi-Pane Layout
-
-Open multiple sessions side-by-side. Drag-and-drop tabs between panes, split views, and compare sessions in parallel — like a proper IDE for your AI conversations.
-
-### :hammer_and_wrench: Rich Tool Call Inspector
-
-Every tool call is paired with its result in an expandable card. Specialized viewers render each tool natively:
-- **Read** calls show syntax-highlighted code with line numbers
-- **Edit** calls show inline diffs with added/removed highlighting
-- **Bash** calls show command output
-- **Subagent** calls show the full execution tree, expandable in-place
-
+並排開啟多個 session。在窗格之間拖放分頁、分割檢視，並平行比較 session——就像一個適合 AI 對話的正式 IDE。
 
 ---
 
-## What the CLI Hides vs. What claude-devtools Shows
+## CLI 隱藏了什麼 vs. claude-devtools 顯示什麼
 
-| What you see in the terminal | What claude-devtools shows you |
-|------------------------------|-------------------------------|
-| `Read 3 files` | Exact file paths, syntax-highlighted content with line numbers |
-| `Searched for 1 pattern` | The regex pattern, every matching file, and the matched lines |
-| `Edited 2 files` | Inline diffs with added/removed highlighting per file |
-| A three-segment context bar | Per-turn token attribution across 7 categories — CLAUDE.md breakdown, skills, @-mentions, tool I/O, thinking, teams, user text — with compaction visualization showing how context fills, compresses, and refills |
-| Subagent output interleaved with the main thread | Isolated execution trees per agent, expandable inline with their own metrics |
-| Teammate messages buried in session logs | Color-coded teammate cards with name, message, and full team lifecycle visibility |
-| Critical events mixed into normal output | Trigger-filtered notification inbox for `.env` access, payment-related file paths, execution errors, and high token usage |
-| `--verbose` JSON dump | Structured, filterable, navigable interface — no noise |
+| 終端機裡你看到的 | claude-devtools 顯示給你的 |
+|----------------|--------------------------|
+| `Read 3 files` | 精確的檔案路徑、帶有行號的語法高亮內容 |
+| `Searched for 1 pattern` | regex 模式、每個符合的檔案及符合的行 |
+| `Edited 2 files` | 每個檔案帶有新增/刪除高亮的行內 diff |
+| 三段式 context 條 | 跨 7 個類別的逐回合 token 歸因——CLAUDE.md 細項、skills、@-提及、工具輸入輸出、思考、團隊、使用者文字——以及顯示 context 如何填充、壓縮和再填充的壓縮視覺化 |
+| 與主執行緒交錯的 subagent 輸出 | 每個代理的獨立執行樹，可就地展開並附有自己的指標 |
+| 埋在 session 紀錄中的隊友訊息 | 帶有名稱、訊息和完整團隊生命週期可見性的彩色隊友卡片 |
+| 混入正常輸出的關鍵事件 | 針對 `.env` 存取、付款相關檔案路徑、執行錯誤和高 token 使用量的觸發器篩選通知匣 |
+| `--verbose` JSON 傾印 | 結構化、可篩選、可導覽的介面——無雜訊 |
 
 ---
 
@@ -263,26 +251,26 @@ pnpm tui
 
 ---
 
-## Docker / Standalone Deployment
+## Docker / Standalone 部署
 
-Run claude-devtools without Electron — in Docker, on a remote server, or anywhere Node.js runs.
+不使用 Electron 執行 claude-devtools——在 Docker、遠端伺服器或任何能執行 Node.js 的地方皆可。
 
-### Quick Start (Docker Compose)
+### 快速開始（Docker Compose）
 
 ```bash
 docker compose up
 ```
 
-Open `http://localhost:3456` in your browser.
+在瀏覽器中開啟 `http://localhost:3456`。
 
-### Quick Start (Docker)
+### 快速開始（Docker）
 
 ```bash
 docker build -t claude-devtools .
 docker run -p 3456:3456 -v ~/.claude:/data/.claude:ro claude-devtools
 ```
 
-### Quick Start (Node.js)
+### 快速開始（Node.js）
 
 ```bash
 pnpm install
@@ -290,47 +278,47 @@ pnpm standalone:build
 node dist-standalone/index.cjs
 ```
 
-### Environment Variables
+### 環境變數
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLAUDE_ROOT` | `~/.claude` | Path to the `.claude` data directory |
-| `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `3456` | Listen port |
-| `CORS_ORIGIN` | `*` (standalone) | CORS origin policy (`*`, specific origin, or comma-separated list) |
+| 變數 | 預設值 | 說明 |
+|------|--------|------|
+| `CLAUDE_ROOT` | `~/.claude` | `.claude` 資料目錄的路徑 |
+| `HOST` | `0.0.0.0` | 綁定位址 |
+| `PORT` | `3456` | 監聽埠號 |
+| `CORS_ORIGIN` | `*`（standalone）| CORS 來源政策（`*`、特定來源或逗號分隔的清單）|
 
-### Notes
+### 注意事項
 
-- **Real-time updates may be slower than Electron.** The Electron app uses native file system watchers with IPC for instant updates. The Docker/standalone server uses SSE (Server-Sent Events) over HTTP, which may introduce slight delays when sessions are actively being written to.
-- **Custom Claude root path.** If your `.claude` directory is not at `~/.claude`, update the volume mount to point to the correct location:
+- **即時更新可能比 Electron 慢。** Electron 應用程式使用原生檔案系統監聽器搭配 IPC 即時更新。Docker/standalone 伺服器使用 HTTP 上的 SSE（Server-Sent Events），當 session 正在被寫入時可能會引入些微延遲。
+- **自訂 Claude 根目錄路徑。** 如果你的 `.claude` 目錄不在 `~/.claude`，請更新 volume 掛載以指向正確位置：
   ```bash
-  # Example: Claude root at /home/user/custom-claude-dir
+  # 範例：Claude 根目錄在 /home/user/custom-claude-dir
   docker run -p 3456:3456 -v /home/user/custom-claude-dir:/data/.claude:ro claude-devtools
 
-  # Or with docker compose, set the CLAUDE_DIR env variable:
+  # 或使用 docker compose，設定 CLAUDE_DIR 環境變數：
   CLAUDE_DIR=/home/user/custom-claude-dir docker compose up
   ```
 
-### Security-Focused Deployment
+### 注重安全性的部署
 
-The standalone server has **zero** outbound network calls. For maximum isolation:
+standalone 伺服器有**零個**對外網路呼叫。如需最大隔離：
 
 ```bash
 docker run --network none -p 3456:3456 -v ~/.claude:/data/.claude:ro claude-devtools
 ```
 
-See [SECURITY.md](SECURITY.md) for a full audit of network activity.
+請參閱 [SECURITY.md](SECURITY.md) 以取得完整的網路活動稽核。
 
 ---
 
-## Development
+## 開發
 
 <details>
-<summary><strong>Build from source</strong></summary>
+<summary><strong>從原始碼建置</strong></summary>
 
 <br />
 
-**Prerequisites:** Node.js 20+, pnpm 10+
+**前置條件：** Node.js 20+、pnpm 10+
 
 ```bash
 git clone https://github.com/matt1398/claude-devtools.git
@@ -339,9 +327,9 @@ pnpm install
 pnpm dev
 ```
 
-The app auto-discovers your Claude Code projects from `~/.claude/`.
+應用程式會從 `~/.claude/` 自動探索你的 Claude Code 專案。
 
-#### Build for Distribution
+#### 建置發行版本
 
 ```bash
 pnpm dist:mac:arm64  # macOS Apple Silicon (.dmg)
@@ -351,31 +339,32 @@ pnpm dist:linux      # Linux (AppImage/.deb/.rpm/.pacman)
 pnpm dist            # macOS + Windows + Linux
 ```
 
-#### Scripts
+#### 指令清單
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Development with hot reload |
-| `pnpm build` | Production build |
-| `pnpm typecheck` | TypeScript type checking |
-| `pnpm lint:fix` | Lint and auto-fix |
-| `pnpm test` | Run all tests |
-| `pnpm test:watch` | Watch mode |
-| `pnpm test:coverage` | Coverage report |
-| `pnpm check` | Full quality gate (types + lint + test + build) |
+| 指令 | 說明 |
+|------|------|
+| `pnpm dev` | 開發模式，附熱重載 |
+| `pnpm build` | 正式版建置 |
+| `pnpm typecheck` | TypeScript 型別檢查 |
+| `pnpm lint:fix` | Lint 並自動修正 |
+| `pnpm test` | 執行所有測試 |
+| `pnpm test:watch` | 監聽模式 |
+| `pnpm test:coverage` | 覆蓋率報告 |
+| `pnpm check` | 完整品質管線（型別 + lint + 測試 + 建置）|
+| `pnpm tui` | 建置並執行 TUI 終端機模式 |
 
 </details>
 
 ---
 
-## Contributing
+## 貢獻
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines. Please read our [Code of Conduct](CODE_OF_CONDUCT.md).
+開發指南請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。請閱讀我們的[行為準則](CODE_OF_CONDUCT.md)。
 
-## Security
+## 安全性
 
-IPC handlers validate all inputs with strict path containment checks. File reads are constrained to the project root and `~/.claude`. Sensitive credential paths are blocked. See [SECURITY.md](SECURITY.md) for details.
+IPC handlers 以嚴格的路徑包含檢查驗證所有輸入。檔案讀取被限制在專案根目錄和 `~/.claude`。敏感的憑證路徑被封鎖。詳見 [SECURITY.md](SECURITY.md)。
 
-## License
+## 授權條款
 
 [MIT](LICENSE)
